@@ -49,7 +49,7 @@ function combineAttemptErrors(errors) {
   ].join("\n\n"));
 }
 
-function buildYtDlpBaseArgs(options = {}) {
+function buildYtDlpBaseArgs(options = {}, plan = {}) {
   const args = [];
   if (options.jsRuntime && options.jsRuntime !== "none") {
     args.push("--js-runtimes", options.jsRuntime);
@@ -63,10 +63,10 @@ function buildYtDlpBaseArgs(options = {}) {
   if (options.impersonate) {
     args.push("--impersonate", options.impersonate);
   }
-  if (options.cookies) {
+  if (options.cookies && !plan.noCookies) {
     args.push("--cookies", options.cookies);
   }
-  if (options.cookiesFromBrowser) {
+  if (options.cookiesFromBrowser && !plan.noCookies) {
     args.push("--cookies-from-browser", options.cookiesFromBrowser);
   }
   return args;
@@ -83,10 +83,22 @@ function buildDownloadPlans(query, url) {
       target: canonicalYouTubeWatchUrl(trimmedUrl),
       sourceStrategy: "direct-url"
     });
+    plans.push({
+      label: "direct-url-no-cookies",
+      target: canonicalYouTubeWatchUrl(trimmedUrl),
+      sourceStrategy: "direct-url",
+      noCookies: true
+    });
   }
 
   if (trimmedQuery && !isUrl(trimmedQuery)) {
     plans.push(
+      {
+        label: "topic-track-search-no-cookies",
+        target: `ytsearch1:${trimmedQuery} topic`,
+        sourceStrategy: "official-audio",
+        noCookies: true
+      },
       {
         label: "official-audio-search",
         target: `ytsearch1:${trimmedQuery} official audio`,
@@ -96,6 +108,12 @@ function buildDownloadPlans(query, url) {
         label: "topic-track-search",
         target: `ytsearch1:${trimmedQuery} topic`,
         sourceStrategy: "official-audio"
+      },
+      {
+        label: "ytmusic-search-no-cookies",
+        target: `ytmsearch1:${trimmedQuery}`,
+        sourceStrategy: "ytmusic",
+        noCookies: true
       },
       {
         label: "album-track-search",
@@ -123,10 +141,10 @@ function buildDownloadPlans(query, url) {
   return plans;
 }
 
-function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
+function buildYtDlpDownloadArgs(plan, musicDir, options = {}) {
   const template = path.join(musicDir, "%(title).200s.%(ext)s");
   const args = [
-    ...buildYtDlpBaseArgs(options),
+    ...buildYtDlpBaseArgs(options, plan),
     "--force-overwrites",
     "--no-continue",
     "--retries",
@@ -145,7 +163,7 @@ function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
     "after_move:filepath",
     "-o",
     template,
-    target
+    plan.target
   );
 
   return args;
@@ -153,7 +171,7 @@ function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
 
 function runYtDlpDownload(ytDlpBin, plan, musicDir, options = {}) {
   return new Promise((resolve, reject) => {
-    const args = buildYtDlpDownloadArgs(plan.target, musicDir, options);
+    const args = buildYtDlpDownloadArgs(plan, musicDir, options);
     const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
