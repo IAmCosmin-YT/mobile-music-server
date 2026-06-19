@@ -15,9 +15,57 @@ function wrapYtDlpSpawnError(error) {
   return error;
 }
 
-function runYtDlpJson(ytDlpBin, search) {
+function friendlyYtDlpExitError(stderr, code) {
+  const output = String(stderr || "").trim();
+  if (output.includes("No supported JavaScript runtime") || output.includes("HTTP Error 403")) {
+    return new Error(
+      "YouTube rejected the yt-dlp request. In Termux, run: pkg install nodejs -y && python -m pip install -U \"yt-dlp[default]\". The app passes --js-runtimes node by default."
+    );
+  }
+  return new Error(output || `yt-dlp exited with code ${code}`);
+}
+
+function buildYtDlpBaseArgs(options = {}) {
+  const args = [];
+  if (options.jsRuntime && options.jsRuntime !== "none") {
+    args.push("--js-runtimes", options.jsRuntime);
+  }
+  if (options.remoteComponents) {
+    args.push("--remote-components", options.remoteComponents);
+  }
+  return args;
+}
+
+function buildYtDlpSearchArgs(search, options = {}) {
+  return [
+    ...buildYtDlpBaseArgs(options),
+    "--dump-single-json",
+    "--flat-playlist",
+    search
+  ];
+}
+
+function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
+  const template = path.join(musicDir, "%(title).200s.%(ext)s");
+  return [
+    ...buildYtDlpBaseArgs(options),
+    "--format",
+    options.format || "bestaudio[ext=m4a]/bestaudio/best",
+    "--extract-audio",
+    "--audio-format",
+    "mp3",
+    "--no-playlist",
+    "--print",
+    "after_move:filepath",
+    "-o",
+    template,
+    candidate.url
+  ];
+}
+
+function runYtDlpJson(ytDlpBin, search, options = {}) {
   return new Promise((resolve, reject) => {
-    const args = ["--dump-single-json", "--flat-playlist", search];
+    const args = buildYtDlpSearchArgs(search, options);
     const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -33,7 +81,7 @@ function runYtDlpJson(ytDlpBin, search) {
     child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || `yt-dlp search exited with code ${code}`));
+        reject(friendlyYtDlpExitError(stderr, code));
         return;
       }
 
@@ -87,10 +135,12 @@ function normalizeForScore(text) {
     .trim();
 }
 
-async function findBestAudioCandidate({ ytDlpBin, query }) {
+async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents }) {
   if (isUrl(query)) {
     return { url: query, title: query, sourceStrategy: "direct-url", score: 0 };
   }
+
+  const ytDlpOptions = { jsRuntime, remoteComponents };
 
   const preferredSearches = [
     `ytsearch10:${query} official audio`,
@@ -98,7 +148,7 @@ async function findBestAudioCandidate({ ytDlpBin, query }) {
   ];
 
   for (const search of preferredSearches) {
-    const entries = await runYtDlpJson(ytDlpBin, search);
+    const entries = await runYtDlpJson(ytDlpBin, search, ytDlpOptions);
     const best = entries
       .map((entry) => ({ ...entry, score: scoreCandidate(entry, query) }))
       .sort((a, b) => b.score - a.score)[0];
@@ -112,7 +162,7 @@ async function findBestAudioCandidate({ ytDlpBin, query }) {
     }
   }
 
-  const fallbackEntries = await runYtDlpJson(ytDlpBin, `ytsearch5:${query}`);
+  const fallbackEntries = await runYtDlpJson(ytDlpBin, `ytsearch5:${query}`, ytDlpOptions);
   const fallback = fallbackEntries
     .map((entry) => ({ ...entry, score: scoreCandidate(entry, query) }))
     .sort((a, b) => b.score - a.score)[0];
@@ -128,22 +178,15 @@ async function findBestAudioCandidate({ ytDlpBin, query }) {
   };
 }
 
-function downloadWithYtDlp({ ytDlpBin, query, musicDir }) {
+function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, format }) {
   return new Promise((resolve, reject) => {
-    findBestAudioCandidate({ ytDlpBin, query })
+    findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents })
       .then((candidate) => {
-        const template = path.join(musicDir, "%(title).200s.%(ext)s");
-        const args = [
-          "--extract-audio",
-          "--audio-format",
-          "mp3",
-          "--no-playlist",
-          "--print",
-          "after_move:filepath",
-          "-o",
-          template,
-          candidate.url
-        ];
+        const args = buildYtDlpDownloadArgs(candidate, musicDir, {
+          jsRuntime,
+          remoteComponents,
+          format
+        });
 
         const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "";
@@ -160,7 +203,7 @@ function downloadWithYtDlp({ ytDlpBin, query, musicDir }) {
         child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
         child.on("close", async (code) => {
           if (code !== 0) {
-            reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
+            reject(friendlyYtDlpExitError(stderr, code));
             return;
           }
 
@@ -182,4 +225,10 @@ function downloadWithYtDlp({ ytDlpBin, query, musicDir }) {
   });
 }
 
-module.exports = { downloadWithYtDlp, findBestAudioCandidate };
+module.exports = {
+  downloadWithYtDlp,
+  findBestAudioCandidate,
+  buildYtDlpBaseArgs,
+  buildYtDlpSearchArgs,
+  buildYtDlpDownloadArgs
+};

@@ -46,6 +46,9 @@ async function findOrFetch(query) {
   await fs.promises.mkdir(config.musicDir, { recursive: true });
   const downloaded = await downloadWithYtDlp({
     ytDlpBin: config.ytDlpBin,
+    jsRuntime: config.ytDlpJsRuntime,
+    remoteComponents: config.ytDlpRemoteComponents,
+    format: config.ytDlpFormat,
     query,
     musicDir: config.musicDir
   });
@@ -106,6 +109,9 @@ app.get("/health", (req, res) => {
     cacheDir: config.cacheDir,
     dbPath: config.dbPath,
     remoteFetchEnabled: config.enableRemoteFetch,
+    ytDlpJsRuntime: config.ytDlpJsRuntime,
+    ytDlpRemoteComponents: config.ytDlpRemoteComponents || null,
+    ytDlpFormat: config.ytDlpFormat,
     opusBitrate: config.opusBitrate
   });
 });
