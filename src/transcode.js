@@ -44,6 +44,8 @@ function runFfmpeg({ ffmpegBin, inputPath, outputPath, bitrate }) {
       bitrate,
       "-application",
       "audio",
+      "-f",
+      "opus",
       outputPath
     ];
 
