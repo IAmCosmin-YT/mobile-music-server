@@ -1,0 +1,28 @@
+{
+  "name": "mobile-music-server",
+  "version": "1.0.0",
+  "description": "Personal music streaming server for Android Termux with on-demand Opus compression.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "scan": "node scripts/scan.js",
+    "check": "node --check src/server.js && node --check src/config.js && node --check src/database.js && node --check src/library.js && node --check src/transcode.js && node --check src/downloader.js"
+  },
+  "keywords": [
+    "termux",
+    "music",
+    "streaming",
+    "opus",
+    "ffmpeg"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "express": "^4.21.2",
+    "music-metadata": "^11.13.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

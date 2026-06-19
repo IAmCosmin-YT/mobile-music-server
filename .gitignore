@@ -1,0 +1,7 @@
+node_modules/
+music.db
+music.db-*
+cache/
+music/
+.env
+npm-debug.log*

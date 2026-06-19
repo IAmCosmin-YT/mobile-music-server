@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mobile Music Server</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>Music Server</h1>
+          <p id="status">Checking server...</p>
+        </div>
+        <button id="scanButton" type="button">Scan</button>
+      </header>
+
+      <form id="searchForm" class="search">
+        <input id="query" name="q" type="search" placeholder="Search your library" autocomplete="off" required>
+        <button type="submit">Search</button>
+      </form>
+
+      <section id="message" class="message" hidden></section>
+      <section id="results" class="results"></section>
+
+      <footer class="player">
+        <div id="nowPlaying">Nothing playing</div>
+        <audio id="audio" controls preload="none"></audio>
+      </footer>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
