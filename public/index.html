@@ -2,33 +2,160 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Mobile Music Server</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <main class="app">
-      <header class="topbar">
-        <div>
-          <h1>Music Server</h1>
-          <p id="status">Checking server...</p>
+    <div class="app-shell">
+      <main class="views">
+        <section class="view is-active" data-view="home" aria-label="Home">
+          <header class="screen-header">
+            <div>
+              <p class="eyebrow">Mobile Music Server</p>
+              <h1>Home</h1>
+            </div>
+            <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh library">Scan</button>
+          </header>
+
+          <div class="chip-row" aria-label="Filters">
+            <button class="chip is-active" type="button">Quick picks</button>
+            <button class="chip" type="button">Cached</button>
+            <button class="chip" type="button">Local</button>
+            <button class="chip" type="button">Radio</button>
+          </div>
+
+          <section class="content-block">
+            <div class="section-title">
+              <h2>Quick picks</h2>
+              <span id="homeStatus">Loading</span>
+            </div>
+            <div class="track-list" id="quickPicks"></div>
+          </section>
+
+          <section class="content-block">
+            <div class="section-title">
+              <h2>Keep listening</h2>
+            </div>
+            <div class="album-rail" id="keepListening"></div>
+          </section>
+        </section>
+
+        <section class="view" data-view="search" aria-label="Search">
+          <header class="screen-header">
+            <div>
+              <p class="eyebrow">Find local tracks or resolve a song request</p>
+              <h1>Search</h1>
+            </div>
+          </header>
+
+          <form class="search-panel" id="searchForm">
+            <input id="searchInput" name="q" type="search" placeholder="Song, artist, album, or YouTube URL" autocomplete="off">
+            <button type="submit">Search</button>
+            <button class="secondary-button" id="resolveButton" type="button">Play request</button>
+          </form>
+
+          <p class="inline-message" id="searchMessage"></p>
+          <div class="track-list" id="searchResults"></div>
+        </section>
+
+        <section class="view" data-view="library" aria-label="Library">
+          <header class="screen-header">
+            <div>
+              <p class="eyebrow">Offline cache and indexed files</p>
+              <h1>Library</h1>
+            </div>
+          </header>
+
+          <form class="library-filter" id="libraryFilter">
+            <input id="libraryInput" type="search" placeholder="Filter library" autocomplete="off">
+          </form>
+
+          <div class="track-list" id="libraryTracks"></div>
+        </section>
+      </main>
+
+      <section class="mini-player" id="miniPlayer" aria-label="Mini player" hidden>
+        <button class="mini-main" id="openPlayerButton" type="button">
+          <span class="cover small" id="miniCover">M</span>
+          <span>
+            <strong id="miniTitle">Nothing playing</strong>
+            <em id="miniArtist">Choose a track</em>
+          </span>
+        </button>
+        <button class="transport-button" id="miniPlayButton" type="button" aria-label="Play or pause">Play</button>
+        <button class="transport-button" id="miniNextButton" type="button" aria-label="Next track">Next</button>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Primary navigation">
+        <button class="nav-item is-active" type="button" data-tab="home">
+          <span class="nav-dot"></span>
+          <span>Home</span>
+        </button>
+        <button class="nav-item" type="button" data-tab="search">
+          <span class="nav-dot"></span>
+          <span>Search</span>
+        </button>
+        <button class="nav-item" type="button" data-tab="library">
+          <span class="nav-dot"></span>
+          <span>Library</span>
+        </button>
+      </nav>
+
+      <section class="full-player" id="fullPlayer" aria-label="Now playing" aria-hidden="true">
+        <div class="player-sheet">
+          <header class="player-top">
+            <button class="icon-button" id="closePlayerButton" type="button">Close</button>
+            <span>Now playing</span>
+            <button class="icon-button" id="lyricsTabButton" type="button">Lyrics</button>
+          </header>
+
+          <div class="player-tabs">
+            <button class="tab-button is-active" data-player-tab="now" type="button">Track</button>
+            <button class="tab-button" data-player-tab="lyrics" type="button">Lyrics</button>
+            <button class="tab-button" data-player-tab="queue" type="button">Queue</button>
+          </div>
+
+          <section class="player-panel is-active" data-player-panel="now">
+            <div class="cover hero" id="fullCover">M</div>
+            <div class="now-copy">
+              <h2 id="fullTitle">Nothing playing</h2>
+              <p id="fullArtist">Choose a track to start</p>
+            </div>
+            <div class="progress-wrap">
+              <input id="progressInput" type="range" min="0" max="1000" value="0" step="1" aria-label="Playback position">
+              <div class="time-row">
+                <span id="currentTime">0:00</span>
+                <span id="durationTime">0:00</span>
+              </div>
+            </div>
+            <div class="player-controls">
+              <button class="mode-button" id="shuffleButton" type="button">Shuffle Off</button>
+              <button class="transport-button large" id="previousButton" type="button">Prev</button>
+              <button class="play-button" id="playButton" type="button">Play</button>
+              <button class="transport-button large" id="nextButton" type="button">Next</button>
+              <button class="mode-button" id="loopButton" type="button">Loop Off</button>
+            </div>
+          </section>
+
+          <section class="player-panel lyrics-panel" data-player-panel="lyrics">
+            <div class="lyrics-lines" id="lyricsLines">
+              <p class="empty-state">No synced lyrics loaded yet.</p>
+            </div>
+          </section>
+
+          <section class="player-panel queue-panel" data-player-panel="queue">
+            <div class="section-title compact">
+              <h2>Dynamic queue</h2>
+              <span id="queueStatus">Auto radio on</span>
+            </div>
+            <div class="track-list dense" id="queueList"></div>
+          </section>
         </div>
-        <button id="scanButton" type="button">Scan</button>
-      </header>
+      </section>
 
-      <form id="searchForm" class="search">
-        <input id="query" name="q" type="search" placeholder="Search your library" autocomplete="off" required>
-        <button type="submit">Search</button>
-      </form>
-
-      <section id="message" class="message" hidden></section>
-      <section id="results" class="results"></section>
-
-      <footer class="player">
-        <div id="nowPlaying">Nothing playing</div>
-        <audio id="audio" controls preload="none"></audio>
-      </footer>
-    </main>
-    <script src="/app.js"></script>
+      <audio id="audio" preload="metadata"></audio>
+    </div>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

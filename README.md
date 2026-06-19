@@ -1,6 +1,8 @@
 # Mobile Music Server
 
-A small personal music server for an old Android phone running Termux. It scans a local music folder, searches your library, compresses tracks to Opus on first play with `ffmpeg`, stores track metadata in a JSON database file, caches the compressed files, and serves a simple browser player.
+A small personal music server for an old Android phone running Termux. It scans a local music folder, searches your library, compresses tracks to Opus on first play with `ffmpeg`, stores track metadata in a JSON database file, caches the compressed files, and serves a Material-style mobile web player.
+
+The web app includes Home, Search, and Library tabs, a persistent mini-player, a full-screen now-playing view, shuffle and loop modes, synced `.lrc` lyrics, and an auto-extending dynamic queue for radio-style playback.
 
 ## Termux Setup
 
@@ -64,8 +66,12 @@ Look for the `wlan0` address, usually like `192.168.1.x`.
 
 - `GET /health` - server status and active paths.
 - `GET /scan` - scan `MUSIC_DIR` and index supported audio files.
+- `GET /library` - list indexed tracks for the Home and Library tabs.
 - `GET /search?q=query` - fuzzy search indexed tracks.
+- `GET /resolve?q=query` - find a local match or, when enabled, fetch a remote song request.
 - `GET /stream?id=trackId` - stream cached Opus, creating it with `ffmpeg` on first play.
+- `GET /lyrics?id=trackId` - read a synced `.lrc` file beside the audio file.
+- `GET /queue/similar?id=trackId` - return local recommendations for the dynamic queue.
 - `GET /search-and-play?q=query` - redirect to the first playable match.
 
 ## Remote Fetch
@@ -76,7 +82,18 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. Remote sourcing searches for YouTube Music style "Official Audio" and album-track results first, then falls back to standard video audio only when no song-first candidate is found. Use this only for content you have the right to download and stream.
+
+## Synced Lyrics
+
+Place `.lrc` files beside your songs using the same base filename:
+
+```text
+Music/My Song.mp3
+Music/My Song.lrc
+```
+
+The full-screen player will animate the active lyric line automatically.
 
 ## Long-Running Process
 

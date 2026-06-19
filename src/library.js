@@ -44,6 +44,9 @@ async function readTrackMetadata(filePath) {
       title: metadata.common.title || titleFromFile(filePath),
       artist: metadata.common.artist || null,
       album: metadata.common.album || null,
+      genre: Array.isArray(metadata.common.genre) && metadata.common.genre.length
+        ? metadata.common.genre.join(", ")
+        : null,
       durationSeconds: metadata.format.duration || null
     };
   } catch {
@@ -51,6 +54,7 @@ async function readTrackMetadata(filePath) {
       title: titleFromFile(filePath),
       artist: null,
       album: null,
+      genre: null,
       durationSeconds: null
     };
   }

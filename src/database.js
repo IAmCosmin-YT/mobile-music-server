@@ -14,10 +14,15 @@ function createDatabase(dbPath) {
     try {
       const content = fs.readFileSync(dbPath, "utf8");
       const parsed = JSON.parse(content);
-      return {
+      const state = {
         nextId: Number(parsed.nextId) || 1,
         tracks: Array.isArray(parsed.tracks) ? parsed.tracks : []
       };
+      state.tracks = state.tracks.map((track) => ({
+        genre: null,
+        ...track
+      }));
+      return state;
     } catch {
       fs.writeFileSync(dbPath, JSON.stringify(initialState, null, 2));
       return structuredClone(initialState);
@@ -43,6 +48,7 @@ function createDatabase(dbPath) {
         existing.title = track.title;
         existing.artist = track.artist || null;
         existing.album = track.album || null;
+        existing.genre = track.genre || null;
         existing.duration_seconds = track.durationSeconds || null;
         existing.updated_at = now();
         saveState(state);
@@ -56,6 +62,7 @@ function createDatabase(dbPath) {
         title: track.title,
         artist: track.artist || null,
         album: track.album || null,
+        genre: track.genre || null,
         duration_seconds: track.durationSeconds || null,
         cache_path: track.cachePath || null,
         created_at: now(),

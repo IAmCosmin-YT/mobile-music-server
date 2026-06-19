@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "scan": "node scripts/scan.js",
-    "check": "node --check src/server.js && node --check src/config.js && node --check src/database.js && node --check src/library.js && node --check src/transcode.js && node --check src/downloader.js"
+    "check": "node --check src/server.js && node --check src/config.js && node --check src/database.js && node --check src/library.js && node --check src/transcode.js && node --check src/downloader.js && node --check src/lyrics.js && node --check src/recommendations.js && node --check public/app.js"
   },
   "keywords": [
     "termux",
