@@ -111,6 +111,11 @@ function buildDownloadPlans(query, url) {
         label: "plain-search-fallback",
         target: `ytsearch1:${trimmedQuery}`,
         sourceStrategy: "fallback-video"
+      },
+      {
+        label: "soundcloud-search",
+        target: `scsearch1:${trimmedQuery}`,
+        sourceStrategy: "soundcloud"
       }
     );
   }
