@@ -56,7 +56,8 @@ async function findOrFetch(query, forceUrl = null) {
     cookies: config.ytDlpCookies,
     cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
     format: config.ytDlpFormat,
-    query: forceUrl || query,
+    query: query,
+    url: forceUrl,
     musicDir: config.musicDir
   });
   const downloadedPath = downloaded.path;

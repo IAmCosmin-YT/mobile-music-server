@@ -288,7 +288,7 @@ async function searchRemote() {
       setMessage(els.searchMessage, `Found ${results.length} remote results. Choose one to download.`);
       results.forEach((r) => {
         const trackObj = { title: r.title, artist: r.channel, thumbnail: r.thumbnail };
-        const button = makeTrackRow(trackObj, "Download", () => resolveSpecificRemote(r.url));
+        const button = makeTrackRow(trackObj, "Download", () => resolveSpecificRemote(r.url, r.title, r.channel));
         els.remoteSearchResults.append(button);
       });
       els.remoteSearchResultsWrapper.hidden = false;
@@ -300,10 +300,11 @@ async function searchRemote() {
   }
 }
 
-async function resolveSpecificRemote(url) {
+async function resolveSpecificRemote(url, title, channel) {
   setMessage(els.searchMessage, "Downloading selected track...");
   try {
-    const data = await api(`/resolve?url=${encodeURIComponent(url)}`);
+    const query = `${title || ""} ${channel || ""}`.trim();
+    const data = await api(`/resolve?url=${encodeURIComponent(url)}&q=${encodeURIComponent(query)}`);
     const track = data.track;
     if (!state.tracks.some((item) => item.id === track.id)) {
       state.tracks.unshift(track);

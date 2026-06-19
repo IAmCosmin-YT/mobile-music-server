@@ -72,45 +72,50 @@ function buildYtDlpBaseArgs(options = {}) {
   return args;
 }
 
-function buildDownloadPlans(query) {
-  const trimmed = String(query || "").trim();
-  if (!trimmed) return [];
+function buildDownloadPlans(query, url) {
+  const plans = [];
+  const trimmedUrl = String(url || "").trim();
+  const trimmedQuery = String(query || "").trim();
 
-  if (isUrl(trimmed)) {
-    return [{
+  if (trimmedUrl && isUrl(trimmedUrl)) {
+    plans.push({
       label: "direct-url",
-      target: canonicalYouTubeWatchUrl(trimmed),
+      target: canonicalYouTubeWatchUrl(trimmedUrl),
       sourceStrategy: "direct-url"
-    }];
+    });
   }
 
-  return [
-    {
-      label: "official-audio-search",
-      target: `ytsearch1:${trimmed} official audio`,
-      sourceStrategy: "official-audio"
-    },
-    {
-      label: "topic-track-search",
-      target: `ytsearch1:${trimmed} topic`,
-      sourceStrategy: "official-audio"
-    },
-    {
-      label: "album-track-search",
-      target: `ytsearch1:${trimmed} album track`,
-      sourceStrategy: "album-track"
-    },
-    {
-      label: "audio-track-search",
-      target: `ytsearch1:${trimmed} audio`,
-      sourceStrategy: "song-audio"
-    },
-    {
-      label: "plain-search-fallback",
-      target: `ytsearch1:${trimmed}`,
-      sourceStrategy: "fallback-video"
-    }
-  ];
+  if (trimmedQuery && !isUrl(trimmedQuery)) {
+    plans.push(
+      {
+        label: "official-audio-search",
+        target: `ytsearch1:${trimmedQuery} official audio`,
+        sourceStrategy: "official-audio"
+      },
+      {
+        label: "topic-track-search",
+        target: `ytsearch1:${trimmedQuery} topic`,
+        sourceStrategy: "official-audio"
+      },
+      {
+        label: "album-track-search",
+        target: `ytsearch1:${trimmedQuery} album track`,
+        sourceStrategy: "album-track"
+      },
+      {
+        label: "audio-track-search",
+        target: `ytsearch1:${trimmedQuery} audio`,
+        sourceStrategy: "song-audio"
+      },
+      {
+        label: "plain-search-fallback",
+        target: `ytsearch1:${trimmedQuery}`,
+        sourceStrategy: "fallback-video"
+      }
+    );
+  }
+
+  return plans;
 }
 
 function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
@@ -186,6 +191,7 @@ function runYtDlpDownload(ytDlpBin, plan, musicDir, options = {}) {
 async function downloadWithYtDlp({
   ytDlpBin,
   query,
+  url,
   musicDir,
   jsRuntime,
   remoteComponents,
@@ -195,7 +201,7 @@ async function downloadWithYtDlp({
   cookiesFromBrowser,
   format
 }) {
-  const plans = buildDownloadPlans(query);
+  const plans = buildDownloadPlans(query, url);
   const errors = [];
   const options = {
     jsRuntime,
