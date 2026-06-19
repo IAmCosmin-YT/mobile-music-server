@@ -31,6 +31,13 @@ function friendlyYtDlpExitError(stderr, code) {
   return new Error(output || `yt-dlp exited with code ${code}`);
 }
 
+function combineAttemptErrors(errors) {
+  return new Error([
+    "yt-dlp could not download a playable audio file after trying multiple strategies.",
+    ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}):\n${error.message}`)
+  ].join("\n\n"));
+}
+
 function buildYtDlpBaseArgs(options = {}) {
   const args = [];
   if (options.jsRuntime && options.jsRuntime !== "none") {
@@ -58,8 +65,14 @@ function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
   const template = path.join(musicDir, "%(title).200s.%(ext)s");
   return [
     ...buildYtDlpBaseArgs(options),
+    "--force-overwrites",
+    "--no-continue",
+    "--retries",
+    "3",
+    "--fragment-retries",
+    "3",
     "--format",
-    options.format || "bestaudio[ext=m4a]/bestaudio/best",
+    options.format || "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best",
     "--extract-audio",
     "--audio-format",
     "mp3",
@@ -69,6 +82,48 @@ function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
     "-o",
     template,
     candidate.url
+  ];
+}
+
+function buildDownloadStrategies(options = {}) {
+  const directFormat = options.format || "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best";
+  const hlsFormat = "bestaudio[protocol=m3u8_native]/bestaudio[ext=m4a]/bestaudio/best";
+  const base = {
+    jsRuntime: options.jsRuntime,
+    remoteComponents: options.remoteComponents
+  };
+
+  return [
+    {
+      label: "direct-audio-web-safari",
+      ...base,
+      extractorArgs: options.extractorArgs,
+      format: directFormat
+    },
+    {
+      label: "hls-audio-web-safari",
+      ...base,
+      extractorArgs: options.extractorArgs,
+      format: hlsFormat
+    },
+    {
+      label: "direct-audio-web",
+      ...base,
+      extractorArgs: "youtube:player_client=web",
+      format: directFormat
+    },
+    {
+      label: "hls-audio-web",
+      ...base,
+      extractorArgs: "youtube:player_client=web",
+      format: hlsFormat
+    },
+    {
+      label: "yt-dlp-default-client",
+      ...base,
+      extractorArgs: "",
+      format: directFormat
+    }
   ];
 }
 
@@ -202,52 +257,69 @@ async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteCompon
   };
 }
 
-function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, extractorArgs, format }) {
+function runYtDlpDownload(ytDlpBin, candidate, musicDir, options = {}) {
   return new Promise((resolve, reject) => {
-    findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs })
-      .then((candidate) => {
-        const args = buildYtDlpDownloadArgs(candidate, musicDir, {
-          jsRuntime,
-          remoteComponents,
-          extractorArgs,
-          format
-        });
+    const args = buildYtDlpDownloadArgs(candidate, musicDir, options);
+    const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
 
-        const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
-        let stdout = "";
-        let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
 
-        child.stdout.on("data", (chunk) => {
-          stdout += chunk.toString();
-        });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
 
-        child.stderr.on("data", (chunk) => {
-          stderr += chunk.toString();
-        });
+    child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
+    child.on("close", async (code) => {
+      if (code !== 0) {
+        reject(friendlyYtDlpExitError(stderr, code));
+        return;
+      }
 
-        child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
-        child.on("close", async (code) => {
-          if (code !== 0) {
-            reject(friendlyYtDlpExitError(stderr, code));
-            return;
-          }
+      const downloadedPath = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+      if (!downloadedPath) {
+        reject(new Error("yt-dlp did not report a downloaded file path"));
+        return;
+      }
 
-          const downloadedPath = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
-          if (!downloadedPath) {
-            reject(new Error("yt-dlp did not report a downloaded file path"));
-            return;
-          }
-
-          try {
-            await fs.promises.access(downloadedPath, fs.constants.R_OK);
-            resolve({ path: downloadedPath, candidate });
-          } catch {
-            reject(new Error(`Downloaded file not found: ${downloadedPath}`));
-          }
-        });
-      })
-      .catch(reject);
+      try {
+        const stat = await fs.promises.stat(downloadedPath);
+        if (!stat.isFile() || stat.size === 0) {
+          reject(new Error(`Downloaded file is empty: ${downloadedPath}`));
+          return;
+        }
+        resolve(downloadedPath);
+      } catch {
+        reject(new Error(`Downloaded file not found: ${downloadedPath}`));
+      }
+    });
   });
+}
+
+async function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, extractorArgs, format }) {
+  const candidate = await findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs });
+  const attempts = buildDownloadStrategies({ jsRuntime, remoteComponents, extractorArgs, format });
+  const errors = [];
+
+  for (const attempt of attempts) {
+    try {
+      const downloadedPath = await runYtDlpDownload(ytDlpBin, candidate, musicDir, attempt);
+      return {
+        path: downloadedPath,
+        candidate: {
+          ...candidate,
+          downloadStrategy: attempt.label
+        }
+      };
+    } catch (error) {
+      errors.push({ label: attempt.label, message: error.message });
+    }
+  }
+
+  throw combineAttemptErrors(errors);
 }
 
 module.exports = {
@@ -255,5 +327,6 @@ module.exports = {
   findBestAudioCandidate,
   buildYtDlpBaseArgs,
   buildYtDlpSearchArgs,
-  buildYtDlpDownloadArgs
+  buildYtDlpDownloadArgs,
+  buildDownloadStrategies
 };

@@ -38,7 +38,7 @@ OPUS_BITRATE=64k
 YT_DLP_JS_RUNTIME=node
 YT_DLP_REMOTE_COMPONENTS=ejs:github
 YT_DLP_EXTRACTOR_ARGS=youtube:player_client=web_safari,web
-YT_DLP_FORMAT=bestaudio[protocol=m3u8_native]/bestaudio[ext=m4a]/bestaudio/best
+YT_DLP_FORMAT=bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best
 ```
 
 On Android, a common music path after `termux-setup-storage` is:
@@ -87,7 +87,7 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. Remote sourcing searches for YouTube Music style "Official Audio" and album-track results first, then falls back to standard video audio only when no song-first candidate is found. Downloads use `--js-runtimes node`, `--remote-components ejs:github`, canonical `www.youtube.com/watch` URLs, `youtube:player_client=web_safari,web`, and prefer `bestaudio[protocol=m3u8_native]/bestaudio[ext=m4a]/bestaudio/best` to avoid fetching raw video when an audio stream is available. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. Remote sourcing searches for YouTube Music style "Official Audio" and album-track results first, then falls back to standard video audio only when no song-first candidate is found. Downloads use `--js-runtimes node`, `--remote-components ejs:github`, canonical `www.youtube.com/watch` URLs, `youtube:player_client=web_safari,web`, and prefer direct audio streams before retrying HLS or alternate YouTube clients. Use this only for content you have the right to download and stream.
 
 If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and confirm remote EJS component access:
 
