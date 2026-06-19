@@ -63,16 +63,24 @@ function buildYtDlpSearchArgs(search, options = {}) {
 
 function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
   const template = path.join(musicDir, "%(title).200s.%(ext)s");
-  return [
+  const args = [
     ...buildYtDlpBaseArgs(options),
     "--force-overwrites",
     "--no-continue",
     "--retries",
     "3",
     "--fragment-retries",
-    "3",
-    "--format",
-    options.format || "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best",
+    "3"
+  ];
+
+  if (options.format && options.format !== "default") {
+    args.push(
+      "--format",
+      options.format
+    );
+  }
+
+  args.push(
     "--extract-audio",
     "--audio-format",
     "mp3",
@@ -82,7 +90,9 @@ function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
     "-o",
     template,
     candidate.url
-  ];
+  );
+
+  return args;
 }
 
 function buildDownloadStrategies(options = {}) {
@@ -119,10 +129,10 @@ function buildDownloadStrategies(options = {}) {
       format: hlsFormat
     },
     {
-      label: "yt-dlp-default-client",
+      label: "yt-dlp-native-default",
       ...base,
       extractorArgs: "",
-      format: directFormat
+      format: "default"
     }
   ];
 }
