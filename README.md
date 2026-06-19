@@ -20,7 +20,8 @@ npm install
 Optional remote fallback uses `yt-dlp` and is disabled by default:
 
 ```bash
-pip install yt-dlp
+python -m pip install -U yt-dlp
+yt-dlp --version
 ```
 
 ## Configuration

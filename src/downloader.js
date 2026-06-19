@@ -6,6 +6,15 @@ function isUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
 }
 
+function wrapYtDlpSpawnError(error) {
+  if (error && error.code === "ENOENT") {
+    return new Error(
+      "yt-dlp is not installed or is not on PATH. In Termux, run: python -m pip install -U yt-dlp"
+    );
+  }
+  return error;
+}
+
 function runYtDlpJson(ytDlpBin, search) {
   return new Promise((resolve, reject) => {
     const args = ["--dump-single-json", "--flat-playlist", search];
@@ -21,7 +30,7 @@ function runYtDlpJson(ytDlpBin, search) {
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
     child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error(stderr.trim() || `yt-dlp search exited with code ${code}`));
@@ -148,7 +157,7 @@ function downloadWithYtDlp({ ytDlpBin, query, musicDir }) {
           stderr += chunk.toString();
         });
 
-        child.on("error", reject);
+        child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
         child.on("close", async (code) => {
           if (code !== 0) {
             reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
