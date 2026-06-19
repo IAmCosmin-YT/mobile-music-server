@@ -1,6 +1,5 @@
 node_modules/
-music.db
-music.db-*
+music-db.json
 cache/
 music/
 .env

@@ -31,7 +31,7 @@ const config = {
   port: Number(process.env.PORT || 3000),
   musicDir: resolveFromCwd(process.env.MUSIC_DIR, "./music"),
   cacheDir: resolveFromCwd(process.env.CACHE_DIR, "./cache"),
-  dbPath: resolveFromCwd(process.env.DB_PATH, "./music.db"),
+  dbPath: resolveFromCwd(process.env.DB_PATH, "./music-db.json"),
   enableRemoteFetch: boolFromEnv(process.env.ENABLE_REMOTE_FETCH, false),
   opusBitrate: process.env.OPUS_BITRATE || "64k",
   ffmpegBin: process.env.FFMPEG_BIN || "ffmpeg",

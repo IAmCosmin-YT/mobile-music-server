@@ -1,12 +1,12 @@
 # Mobile Music Server
 
-A small personal music server for an old Android phone running Termux. It scans a local music folder, searches your library, compresses tracks to Opus on first play with `ffmpeg`, caches the compressed files, and serves a simple browser player.
+A small personal music server for an old Android phone running Termux. It scans a local music folder, searches your library, compresses tracks to Opus on first play with `ffmpeg`, stores track metadata in a JSON database file, caches the compressed files, and serves a simple browser player.
 
 ## Termux Setup
 
 ```bash
 pkg update
-pkg install nodejs ffmpeg python git clang make pkg-config -y
+pkg install nodejs ffmpeg python git -y
 ```
 
 Copy this project to the phone, then install dependencies:
@@ -29,7 +29,7 @@ Create a `.env` file or export environment variables before starting:
 PORT=3000
 MUSIC_DIR=./music
 CACHE_DIR=./cache
-DB_PATH=./music.db
+DB_PATH=./music-db.json
 ENABLE_REMOTE_FETCH=false
 OPUS_BITRATE=64k
 ```

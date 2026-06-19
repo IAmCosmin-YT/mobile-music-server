@@ -1,91 +1,101 @@
 const fs = require("fs");
 const path = require("path");
-const Database = require("better-sqlite3");
 
 function createDatabase(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const initialState = { nextId: 1, tracks: [] };
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tracks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_type TEXT NOT NULL CHECK (source_type IN ('local', 'remote')),
-      source_path TEXT NOT NULL UNIQUE,
-      title TEXT NOT NULL,
-      artist TEXT,
-      album TEXT,
-      duration_seconds REAL,
-      cache_path TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_played_at TEXT
-    );
+  function loadState() {
+    if (!fs.existsSync(dbPath)) {
+      fs.writeFileSync(dbPath, JSON.stringify(initialState, null, 2));
+      return structuredClone(initialState);
+    }
 
-    CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
-    CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
-  `);
+    try {
+      const content = fs.readFileSync(dbPath, "utf8");
+      const parsed = JSON.parse(content);
+      return {
+        nextId: Number(parsed.nextId) || 1,
+        tracks: Array.isArray(parsed.tracks) ? parsed.tracks : []
+      };
+    } catch {
+      fs.writeFileSync(dbPath, JSON.stringify(initialState, null, 2));
+      return structuredClone(initialState);
+    }
+  }
 
-  const touchUpdatedAt = db.prepare(`
-    UPDATE tracks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `);
+  function saveState(state) {
+    fs.writeFileSync(dbPath, JSON.stringify(state, null, 2));
+  }
+
+  let state = loadState();
+
+  function now() {
+    return new Date().toISOString();
+  }
 
   return {
-    raw: db,
+    raw: null,
 
     upsertTrack(track) {
-      const result = db.prepare(`
-        INSERT INTO tracks (
-          source_type, source_path, title, artist, album, duration_seconds, cache_path
-        ) VALUES (
-          @sourceType, @sourcePath, @title, @artist, @album, @durationSeconds, @cachePath
-        )
-        ON CONFLICT(source_path) DO UPDATE SET
-          title = excluded.title,
-          artist = excluded.artist,
-          album = excluded.album,
-          duration_seconds = excluded.duration_seconds,
-          updated_at = CURRENT_TIMESTAMP
-      `).run({
-        sourceType: track.sourceType || "local",
-        sourcePath: track.sourcePath,
+      const existing = state.tracks.find((item) => item.source_path === track.sourcePath);
+      if (existing) {
+        existing.title = track.title;
+        existing.artist = track.artist || null;
+        existing.album = track.album || null;
+        existing.duration_seconds = track.durationSeconds || null;
+        existing.updated_at = now();
+        saveState(state);
+        return existing.id;
+      }
+
+      const record = {
+        id: state.nextId++,
+        source_type: track.sourceType || "local",
+        source_path: track.sourcePath,
         title: track.title,
         artist: track.artist || null,
         album: track.album || null,
-        durationSeconds: track.durationSeconds || null,
-        cachePath: track.cachePath || null
-      });
+        duration_seconds: track.durationSeconds || null,
+        cache_path: track.cachePath || null,
+        created_at: now(),
+        updated_at: now(),
+        last_played_at: null
+      };
 
-      if (result.lastInsertRowid) return Number(result.lastInsertRowid);
-      return db.prepare("SELECT id FROM tracks WHERE source_path = ?").get(track.sourcePath).id;
+      state.tracks.push(record);
+      saveState(state);
+      return record.id;
     },
 
     getTrack(id) {
-      return db.prepare("SELECT * FROM tracks WHERE id = ?").get(id);
+      return state.tracks.find((track) => track.id === id);
     },
 
     getTrackBySourcePath(sourcePath) {
-      return db.prepare("SELECT * FROM tracks WHERE source_path = ?").get(sourcePath);
+      return state.tracks.find((track) => track.source_path === sourcePath);
     },
 
     listTracks() {
-      return db.prepare("SELECT * FROM tracks ORDER BY title COLLATE NOCASE").all();
+      return [...state.tracks].sort((a, b) =>
+        String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" })
+      );
     },
 
     updateCachePath(id, cachePath) {
-      db.prepare(`
-        UPDATE tracks
-        SET cache_path = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(cachePath, id);
+      const track = state.tracks.find((item) => item.id === id);
+      if (!track) return;
+      track.cache_path = cachePath;
+      track.updated_at = now();
+      saveState(state);
     },
 
     markPlayed(id) {
-      db.prepare(`
-        UPDATE tracks SET last_played_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).run(id);
-      touchUpdatedAt.run(id);
+      const track = state.tracks.find((item) => item.id === id);
+      if (!track) return;
+      track.last_played_at = now();
+      track.updated_at = now();
+      saveState(state);
     }
   };
 }
