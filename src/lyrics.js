@@ -55,4 +55,36 @@ async function findLyricsForTrack(track) {
   return { synced: false, lines: [] };
 }
 
-module.exports = { parseLrc, findLyricsForTrack };
+async function fetchLyricsFromLrclib(track) {
+  if (!track || !track.title) return { synced: false, lines: [] };
+
+  const url = new URL("https://lrclib.net/api/get");
+  url.searchParams.set("track_name", track.title);
+  if (track.artist) url.searchParams.set("artist_name", track.artist);
+  if (track.album) url.searchParams.set("album_name", track.album);
+  if (track.duration_seconds) url.searchParams.set("duration", Math.round(track.duration_seconds));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { "User-Agent": "MobileMusicServer/1.0" }
+    });
+    if (!response.ok) return { synced: false, lines: [] };
+
+    const data = await response.json();
+    if (!data.syncedLyrics) return { synced: false, lines: [] };
+
+    const lines = parseLrc(data.syncedLyrics);
+    if (lines.length && track.source_path) {
+      const dir = path.dirname(track.source_path);
+      const base = path.basename(track.source_path, path.extname(track.source_path));
+      const lrcPath = path.join(dir, `${base}.lrc`);
+      await fs.promises.writeFile(lrcPath, data.syncedLyrics, "utf8");
+      return { synced: true, path: lrcPath, lines };
+    }
+  } catch {
+    // Ignore fetch errors
+  }
+  return { synced: false, lines: [] };
+}
+
+module.exports = { parseLrc, findLyricsForTrack, fetchLyricsFromLrclib };

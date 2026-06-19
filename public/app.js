@@ -14,6 +14,8 @@ const els = {
   searchMessage: document.querySelector("#searchMessage"),
   resolveButton: document.querySelector("#resolveButton"),
   searchResults: document.querySelector("#searchResults"),
+  remoteSearchResultsWrapper: document.querySelector("#remoteSearchResultsWrapper"),
+  remoteSearchResults: document.querySelector("#remoteSearchResults"),
   libraryFilter: document.querySelector("#libraryFilter"),
   libraryInput: document.querySelector("#libraryInput"),
   libraryTracks: document.querySelector("#libraryTracks"),
@@ -38,6 +40,7 @@ const els = {
   playButton: document.querySelector("#playButton"),
   nextButton: document.querySelector("#nextButton"),
   loopButton: document.querySelector("#loopButton"),
+  fetchLyricsButton: document.querySelector("#fetchLyricsButton"),
   lyricsLines: document.querySelector("#lyricsLines"),
   queueStatus: document.querySelector("#queueStatus"),
   queueList: document.querySelector("#queueList")
@@ -88,11 +91,19 @@ function setMessage(element, message) {
 function makeCover(track, className = "small") {
   const cover = document.createElement("span");
   cover.className = `cover ${className}`;
-  cover.textContent = initials(track);
+  if (track.coverUrl) {
+    cover.style.backgroundImage = `url(${track.coverUrl})`;
+    cover.style.backgroundSize = "cover";
+  } else if (track.thumbnail) {
+    cover.style.backgroundImage = `url(${track.thumbnail})`;
+    cover.style.backgroundSize = "cover";
+  } else {
+    cover.textContent = initials(track);
+  }
   return cover;
 }
 
-function makeTrackRow(track, list = state.tracks, index = 0, action = "Play") {
+function makeTrackRow(track, action = "Play", onClick = null) {
   const button = document.createElement("button");
   button.className = "track-row";
   button.type = "button";
@@ -112,11 +123,13 @@ function makeTrackRow(track, list = state.tracks, index = 0, action = "Play") {
   actionEl.textContent = action;
 
   button.append(makeCover(track), text, actionEl);
-  button.addEventListener("click", () => startQueue(list, index));
+  if (onClick) {
+    button.addEventListener("click", onClick);
+  }
   return button;
 }
 
-function renderTrackList(container, tracks, emptyText, action = "Play") {
+function renderTrackList(container, tracks, emptyText, action = "Play", onClickFactory = null) {
   container.replaceChildren();
   if (!tracks.length) {
     const empty = document.createElement("p");
@@ -127,7 +140,8 @@ function renderTrackList(container, tracks, emptyText, action = "Play") {
   }
 
   tracks.forEach((track, index) => {
-    container.append(makeTrackRow(track, tracks, index, action));
+    const onClick = onClickFactory ? onClickFactory(track, index) : () => startQueue(tracks, index);
+    container.append(makeTrackRow(track, action, onClick));
   });
 }
 
@@ -185,10 +199,21 @@ function renderPlayer() {
   els.miniPlayer.hidden = !hasTrack;
 
   if (track) {
-    els.miniCover.textContent = initials(track);
+    if (track.coverUrl) {
+      els.miniCover.style.backgroundImage = `url(${track.coverUrl})`;
+      els.miniCover.style.backgroundSize = "cover";
+      els.miniCover.textContent = "";
+      els.fullCover.style.backgroundImage = `url(${track.coverUrl})`;
+      els.fullCover.style.backgroundSize = "cover";
+      els.fullCover.textContent = "";
+    } else {
+      els.miniCover.style.backgroundImage = "none";
+      els.fullCover.style.backgroundImage = "none";
+      els.miniCover.textContent = initials(track);
+      els.fullCover.textContent = initials(track);
+    }
     els.miniTitle.textContent = track.title;
     els.miniArtist.textContent = trackMeta(track);
-    els.fullCover.textContent = initials(track);
     els.fullTitle.textContent = track.title;
     els.fullArtist.textContent = trackMeta(track);
   }
@@ -235,36 +260,58 @@ async function runSearch() {
   if (!query) return;
 
   setMessage(els.searchMessage, "Searching local library...");
+  els.remoteSearchResultsWrapper.hidden = true;
   try {
     const data = await api(`/search?q=${encodeURIComponent(query)}`);
     const tracks = data.tracks || [];
-    renderTrackList(els.searchResults, tracks, "No local matches. Try Play request for remote resolve.");
+    renderTrackList(els.searchResults, tracks, "No local matches. Tap 'Search Remote' to find it online.");
     setMessage(els.searchMessage, tracks.length ? `${tracks.length} local matches` : "No local matches.");
   } catch (error) {
     setMessage(els.searchMessage, error.message);
   }
 }
 
-async function resolveAndPlay() {
+async function searchRemote() {
   const query = els.searchInput.value.trim();
   if (!query) return;
 
   els.resolveButton.disabled = true;
-  setMessage(els.searchMessage, "Resolving official audio first...");
+  setMessage(els.searchMessage, "Fetching remote results...");
   try {
-    const data = await api(`/resolve?q=${encodeURIComponent(query)}`);
+    const data = await api(`/search-remote?q=${encodeURIComponent(query)}`);
+    const results = data.results || [];
+    
+    els.remoteSearchResults.replaceChildren();
+    if (!results.length) {
+      setMessage(els.searchMessage, "No remote results found.");
+    } else {
+      setMessage(els.searchMessage, `Found ${results.length} remote results. Choose one to download.`);
+      results.forEach((r) => {
+        const trackObj = { title: r.title, artist: r.channel, thumbnail: r.thumbnail };
+        const button = makeTrackRow(trackObj, "Download", () => resolveSpecificRemote(r.url));
+        els.remoteSearchResults.append(button);
+      });
+      els.remoteSearchResultsWrapper.hidden = false;
+    }
+  } catch (error) {
+    setMessage(els.searchMessage, error.message);
+  } finally {
+    els.resolveButton.disabled = false;
+  }
+}
+
+async function resolveSpecificRemote(url) {
+  setMessage(els.searchMessage, "Downloading selected track...");
+  try {
+    const data = await api(`/resolve?url=${encodeURIComponent(url)}`);
     const track = data.track;
     if (!state.tracks.some((item) => item.id === track.id)) {
       state.tracks.unshift(track);
     }
     startQueue([track], 0);
-    setMessage(els.searchMessage, data.sourceStrategy === "fallback-video"
-      ? "Playing fallback video audio."
-      : "Playing official audio style result.");
+    setMessage(els.searchMessage, "Playing downloaded track.");
   } catch (error) {
     setMessage(els.searchMessage, error.message);
-  } finally {
-    els.resolveButton.disabled = false;
   }
 }
 
@@ -461,7 +508,7 @@ els.searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   runSearch();
 });
-els.resolveButton.addEventListener("click", resolveAndPlay);
+els.resolveButton.addEventListener("click", searchRemote);
 els.libraryFilter.addEventListener("input", renderLibrary);
 els.openPlayerButton.addEventListener("click", () => openFullPlayer("now"));
 els.closePlayerButton.addEventListener("click", closeFullPlayer);
@@ -479,6 +526,24 @@ els.loopButton.addEventListener("click", () => {
   state.loopMode = state.loopMode === "off" ? "one" : state.loopMode === "one" ? "queue" : "off";
   renderPlayer();
 });
+
+if (els.fetchLyricsButton) {
+  els.fetchLyricsButton.addEventListener("click", async () => {
+    if (!state.currentTrack) return;
+    els.lyricsLines.innerHTML = '<p class="empty-state">Fetching lyrics from LRCLIB...</p>';
+    els.fetchLyricsButton.disabled = true;
+    try {
+      const data = await api(`/lyrics/fetch?id=${encodeURIComponent(state.currentTrack.id)}`);
+      state.lyrics = data.lines || [];
+      renderLyrics();
+    } catch (error) {
+      state.lyrics = [];
+      els.lyricsLines.innerHTML = `<p class="empty-state">${error.message}</p>`;
+    } finally {
+      els.fetchLyricsButton.disabled = false;
+    }
+  });
+}
 
 els.progressInput.addEventListener("input", () => {
   if (!audio.duration) return;

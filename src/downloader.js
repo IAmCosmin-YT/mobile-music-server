@@ -227,6 +227,80 @@ async function downloadWithYtDlp({
   throw combineAttemptErrors(errors);
 }
 
+function runYtDlpSearch(ytDlpBin, target, options = {}) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      ...buildYtDlpBaseArgs(options),
+      "-j",
+      "--flat-playlist",
+      target
+    ];
+
+    const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => reject(wrapSpawnError(error)));
+    child.on("close", (code) => {
+      if (code !== 0 && stdout.trim() === "") {
+        reject(makeExitError(stderr, code, "search", target));
+        return;
+      }
+
+      const results = [];
+      const lines = stdout.trim().split(/\r?\n/);
+      for (const line of lines) {
+        if (!line) continue;
+        try {
+          results.push(JSON.parse(line));
+        } catch {
+          // ignore
+        }
+      }
+      resolve(results);
+    });
+  });
+}
+
+async function searchRemoteWithYtDlp({
+  ytDlpBin,
+  query,
+  jsRuntime,
+  remoteComponents,
+  extractorArgs,
+  impersonate,
+  cookies,
+  cookiesFromBrowser
+}) {
+  const target = `ytsearch5:${query}`;
+  const options = {
+    jsRuntime,
+    remoteComponents,
+    extractorArgs,
+    impersonate,
+    cookies,
+    cookiesFromBrowser
+  };
+
+  const results = await runYtDlpSearch(ytDlpBin, target, options);
+  return results.map(r => ({
+    id: r.id,
+    title: r.title,
+    channel: r.uploader || r.channel,
+    duration: r.duration,
+    thumbnail: r.thumbnails && r.thumbnails.length ? r.thumbnails[r.thumbnails.length - 1].url : r.thumbnail,
+    url: r.url || (r.id ? `https://www.youtube.com/watch?v=${r.id}` : null)
+  })).filter(r => r.url);
+}
+
 async function findBestAudioCandidate({ query }) {
   const [plan] = buildDownloadPlans(query);
   if (!plan) throw new Error("No query provided");
@@ -240,6 +314,7 @@ async function findBestAudioCandidate({ query }) {
 
 module.exports = {
   downloadWithYtDlp,
+  searchRemoteWithYtDlp,
   findBestAudioCandidate,
   buildYtDlpBaseArgs,
   buildYtDlpDownloadArgs,

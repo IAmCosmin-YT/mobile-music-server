@@ -5,8 +5,8 @@ const { config } = require("./config");
 const { createDatabase } = require("./database");
 const { scanLibrary, searchTracks } = require("./library");
 const { ensureOpusCache } = require("./transcode");
-const { downloadWithYtDlp } = require("./downloader");
-const { findLyricsForTrack } = require("./lyrics");
+const { downloadWithYtDlp, searchRemoteWithYtDlp } = require("./downloader");
+const { findLyricsForTrack, fetchLyricsFromLrclib } = require("./lyrics");
 const { similarTracks } = require("./recommendations");
 
 const app = express();
@@ -27,6 +27,7 @@ function serializeTrack(track) {
     hasCache: Boolean(track.cache_path),
     streamUrl: `/stream?id=${encodeURIComponent(track.id)}`,
     lyricsUrl: `/lyrics?id=${encodeURIComponent(track.id)}`,
+    coverUrl: `/cover?id=${encodeURIComponent(track.id)}`,
     score: track.score
   };
 }
@@ -37,9 +38,11 @@ function asyncRoute(handler) {
   };
 }
 
-async function findOrFetch(query) {
-  const localMatches = searchTracks(db, query, 1);
-  if (localMatches.length > 0) return localMatches[0];
+async function findOrFetch(query, forceUrl = null) {
+  if (!forceUrl) {
+    const localMatches = searchTracks(db, query, 1);
+    if (localMatches.length > 0) return localMatches[0];
+  }
 
   if (!config.enableRemoteFetch) return null;
 
@@ -53,7 +56,7 @@ async function findOrFetch(query) {
     cookies: config.ytDlpCookies,
     cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
     format: config.ytDlpFormat,
-    query,
+    query: forceUrl || query,
     musicDir: config.musicDir
   });
   const downloadedPath = downloaded.path;
@@ -165,14 +168,38 @@ app.get("/search", asyncRoute(async (req, res) => {
   });
 }));
 
-app.get("/resolve", asyncRoute(async (req, res) => {
+app.get("/search-remote", asyncRoute(async (req, res) => {
   const query = String(req.query.q || "").trim();
   if (!query) {
     res.status(400).json({ ok: false, error: "Missing required query parameter: q" });
     return;
   }
+  if (!config.enableRemoteFetch) {
+    res.status(403).json({ ok: false, error: "Remote fetch is disabled" });
+    return;
+  }
+  const results = await searchRemoteWithYtDlp({
+    ytDlpBin: config.ytDlpBin,
+    query,
+    jsRuntime: config.ytDlpJsRuntime,
+    remoteComponents: config.ytDlpRemoteComponents,
+    extractorArgs: config.ytDlpExtractorArgs,
+    impersonate: config.ytDlpImpersonate,
+    cookies: config.ytDlpCookies,
+    cookiesFromBrowser: config.ytDlpCookiesFromBrowser
+  });
+  res.json({ ok: true, query, results });
+}));
 
-  const track = await findOrFetch(query);
+app.get("/resolve", asyncRoute(async (req, res) => {
+  const query = String(req.query.q || "").trim();
+  const url = String(req.query.url || "").trim();
+  if (!query && !url) {
+    res.status(400).json({ ok: false, error: "Missing required query parameter: q or url" });
+    return;
+  }
+
+  const track = await findOrFetch(query, url);
   if (!track) {
     res.status(404).json({
       ok: false,
@@ -224,6 +251,50 @@ app.get("/lyrics", asyncRoute(async (req, res) => {
 
   const lyrics = await findLyricsForTrack(track);
   res.json({ ok: true, track: serializeTrack(track), ...lyrics });
+}));
+
+app.get("/lyrics/fetch", asyncRoute(async (req, res) => {
+  const id = Number(req.query.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ ok: false, error: "Missing or invalid required query parameter: id" });
+    return;
+  }
+
+  const track = db.getTrack(id);
+  if (!track) {
+    res.status(404).json({ ok: false, error: "Track not found" });
+    return;
+  }
+
+  const lyrics = await fetchLyricsFromLrclib(track);
+  if (!lyrics.synced) {
+    res.status(404).json({ ok: false, error: "No synced lyrics found on LRCLIB" });
+    return;
+  }
+  res.json({ ok: true, track: serializeTrack(track), ...lyrics });
+}));
+
+app.get("/cover", asyncRoute(async (req, res) => {
+  const id = Number(req.query.id);
+  const track = db.getTrack(id);
+  if (!track || !track.source_path) {
+    res.status(404).end();
+    return;
+  }
+
+  try {
+    const mm = await import("music-metadata");
+    const metadata = await mm.parseFile(track.source_path);
+    if (metadata.common.picture && metadata.common.picture.length > 0) {
+      const pic = metadata.common.picture[0];
+      res.setHeader("Content-Type", pic.format);
+      res.send(pic.data);
+      return;
+    }
+  } catch {
+    // Ignore errors, send 404
+  }
+  res.status(404).end();
 }));
 
 app.get("/queue/similar", asyncRoute(async (req, res) => {
