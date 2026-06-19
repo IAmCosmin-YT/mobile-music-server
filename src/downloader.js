@@ -57,6 +57,12 @@ function buildYtDlpBaseArgs(options = {}) {
   if (options.remoteComponents) {
     args.push("--remote-components", options.remoteComponents);
   }
+  if (options.extractorArgs) {
+    args.push("--extractor-args", options.extractorArgs);
+  }
+  if (options.impersonate) {
+    args.push("--impersonate", options.impersonate);
+  }
   if (options.cookies) {
     args.push("--cookies", options.cookies);
   }
@@ -124,9 +130,6 @@ function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
   }
 
   args.push(
-    "--extract-audio",
-    "--audio-format",
-    "mp3",
     "--no-playlist",
     "--print",
     "after_move:filepath",
@@ -186,6 +189,8 @@ async function downloadWithYtDlp({
   musicDir,
   jsRuntime,
   remoteComponents,
+  extractorArgs,
+  impersonate,
   cookies,
   cookiesFromBrowser,
   format
@@ -195,6 +200,8 @@ async function downloadWithYtDlp({
   const options = {
     jsRuntime,
     remoteComponents,
+    extractorArgs,
+    impersonate,
     cookies,
     cookiesFromBrowser,
     format

@@ -7,6 +7,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".aac",
   ".flac",
   ".wav",
+  ".webm",
   ".ogg",
   ".opus"
 ]);

@@ -37,9 +37,11 @@ ENABLE_REMOTE_FETCH=false
 OPUS_BITRATE=64k
 YT_DLP_JS_RUNTIME=node
 YT_DLP_REMOTE_COMPONENTS=ejs:github
+YT_DLP_EXTRACTOR_ARGS=
+YT_DLP_IMPERSONATE=
 YT_DLP_COOKIES=
 YT_DLP_COOKIES_FROM_BROWSER=
-YT_DLP_FORMAT=
+YT_DLP_FORMAT=bestaudio/best
 ```
 
 On Android, a common music path after `termux-setup-storage` is:
@@ -88,7 +90,7 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader now lets yt-dlp handle search, client selection, and format selection natively. It tries staged targets in this order: `official audio`, `topic`, `album track`, `audio`, then a plain search fallback. Each successful result is post-processed to MP3 by ffmpeg. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader now lets yt-dlp handle search and client selection natively while forcing `bestaudio/best` so it never tries to fetch a video stream. It tries staged targets in this order: `official audio`, `topic`, `album track`, `audio`, then a plain search fallback. The downloaded audio container is cached locally, then the app's normal ffmpeg pipeline converts it to streamable Opus. Use this only for content you have the right to download and stream.
 
 If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and confirm remote EJS component access:
 
@@ -105,6 +107,8 @@ If YouTube requires an authenticated session for a specific track, provide cooki
 export YT_DLP_COOKIES="$HOME/youtube-cookies.txt"
 ```
 
+If YouTube requires a PO token, install a yt-dlp PO-token provider and pass any provider-specific extractor args through `YT_DLP_EXTRACTOR_ARGS`. For browser/TLS fingerprinting cases, install yt-dlp with the `curl-cffi` extra and set `YT_DLP_IMPERSONATE=chrome`.
+
 ## Synced Lyrics
 
 Place `.lrc` files beside your songs using the same base filename:
@@ -118,6 +122,7 @@ The full-screen player will animate the active lyric line automatically.
 
 ## Long-Running Process
 
+### Option A: Manual PM2 Setup
 Install PM2 on the phone:
 
 ```bash
@@ -125,6 +130,24 @@ npm install pm2 -g
 pm2 start src/server.js --name mobile-music-server
 pm2 save
 ```
+
+## Shared Storage (Recommended)
+If you want to use your phone's default Music folder (so other apps like VLC or Oto Music can also play the downloaded music), give Termux storage permissions first:
+
+```bash
+termux-setup-storage
+```
+*(A prompt will appear on your phone asking for storage access. Tap "Allow".)*
+
+Then, create a `.env` file in the project directory to tell the server to use that folder, and optionally enable yt-dlp to download missing songs:
+
+```bash
+cd ~/mobile-music-server
+echo 'MUSIC_DIR="/data/data/com.termux/files/home/storage/shared/Music"' > .env
+echo 'ENABLE_REMOTE_FETCH=true' >> .env
+```
+
+Now any music you download via Chrome to your `Music` folder will be discovered by the server when you hit "Scan library". Any songs the server downloads via yt-dlp will also go straight into this `Music` folder.
 
 ## Local Development
 
