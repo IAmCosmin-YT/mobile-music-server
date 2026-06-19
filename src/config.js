@@ -38,7 +38,7 @@ const config = {
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
   ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
-  ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "youtube:player-client=ios,android,web",
+  ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "",
   ytDlpImpersonate: process.env.YT_DLP_IMPERSONATE || "",
   ytDlpCookies: process.env.YT_DLP_COOKIES || "",
   ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
