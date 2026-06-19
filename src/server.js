@@ -48,7 +48,8 @@ async function findOrFetch(query) {
     ytDlpBin: config.ytDlpBin,
     jsRuntime: config.ytDlpJsRuntime,
     remoteComponents: config.ytDlpRemoteComponents,
-    extractorArgs: config.ytDlpExtractorArgs,
+    cookies: config.ytDlpCookies,
+    cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
     format: config.ytDlpFormat,
     query,
     musicDir: config.musicDir
@@ -112,8 +113,9 @@ app.get("/health", (req, res) => {
     remoteFetchEnabled: config.enableRemoteFetch,
     ytDlpJsRuntime: config.ytDlpJsRuntime,
     ytDlpRemoteComponents: config.ytDlpRemoteComponents || null,
-    ytDlpExtractorArgs: config.ytDlpExtractorArgs,
-    ytDlpFormat: config.ytDlpFormat,
+    ytDlpCookiesConfigured: Boolean(config.ytDlpCookies),
+    ytDlpCookiesFromBrowser: config.ytDlpCookiesFromBrowser || null,
+    ytDlpFormat: config.ytDlpFormat || null,
     opusBitrate: config.opusBitrate
   });
 });

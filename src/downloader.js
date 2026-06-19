@@ -6,176 +6,6 @@ function isUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
 }
 
-function wrapYtDlpSpawnError(error) {
-  if (error && error.code === "ENOENT") {
-    return new Error(
-      "yt-dlp is not installed or is not on PATH. In Termux, run: python -m pip install -U yt-dlp"
-    );
-  }
-  return error;
-}
-
-function friendlyYtDlpExitError(stderr, code) {
-  const output = String(stderr || "").trim();
-  const tail = output.split(/\r?\n/).slice(-8).join("\n");
-  if (output.includes("No supported JavaScript runtime") || output.includes("HTTP Error 403")) {
-    return new Error(
-      [
-        "YouTube rejected the yt-dlp request.",
-        "The app is already passing --js-runtimes node and audio-first format options.",
-        "Try updating yt-dlp/EJS or set YT_DLP_REMOTE_COMPONENTS=ejs:github.",
-        tail ? `yt-dlp output:\n${tail}` : ""
-      ].filter(Boolean).join("\n")
-    );
-  }
-  return new Error(output || `yt-dlp exited with code ${code}`);
-}
-
-function combineAttemptErrors(errors) {
-  return new Error([
-    "yt-dlp could not download a playable audio file after trying multiple strategies.",
-    ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}):\n${error.message}`)
-  ].join("\n\n"));
-}
-
-function buildYtDlpBaseArgs(options = {}) {
-  const args = [];
-  if (options.jsRuntime && options.jsRuntime !== "none") {
-    args.push("--js-runtimes", options.jsRuntime);
-  }
-  if (options.remoteComponents) {
-    args.push("--remote-components", options.remoteComponents);
-  }
-  if (options.extractorArgs) {
-    args.push("--extractor-args", options.extractorArgs);
-  }
-  return args;
-}
-
-function buildYtDlpSearchArgs(search, options = {}) {
-  return [
-    ...buildYtDlpBaseArgs(options),
-    "--dump-single-json",
-    "--flat-playlist",
-    search
-  ];
-}
-
-function buildYtDlpDownloadArgs(candidate, musicDir, options = {}) {
-  const template = path.join(musicDir, "%(title).200s.%(ext)s");
-  const args = [
-    ...buildYtDlpBaseArgs(options),
-    "--force-overwrites",
-    "--no-continue",
-    "--retries",
-    "3",
-    "--fragment-retries",
-    "3"
-  ];
-
-  if (options.format && options.format !== "default") {
-    args.push(
-      "--format",
-      options.format
-    );
-  }
-
-  args.push(
-    "--extract-audio",
-    "--audio-format",
-    "mp3",
-    "--no-playlist",
-    "--print",
-    "after_move:filepath",
-    "-o",
-    template,
-    candidate.url
-  );
-
-  return args;
-}
-
-function buildDownloadStrategies(options = {}) {
-  const directFormat = options.format || "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best";
-  const hlsFormat = "bestaudio[protocol=m3u8_native]/bestaudio[ext=m4a]/bestaudio/best";
-  const base = {
-    jsRuntime: options.jsRuntime,
-    remoteComponents: options.remoteComponents
-  };
-
-  return [
-    {
-      label: "direct-audio-web-safari",
-      ...base,
-      extractorArgs: options.extractorArgs,
-      format: directFormat
-    },
-    {
-      label: "hls-audio-web-safari",
-      ...base,
-      extractorArgs: options.extractorArgs,
-      format: hlsFormat
-    },
-    {
-      label: "direct-audio-web",
-      ...base,
-      extractorArgs: "youtube:player_client=web",
-      format: directFormat
-    },
-    {
-      label: "hls-audio-web",
-      ...base,
-      extractorArgs: "youtube:player_client=web",
-      format: hlsFormat
-    },
-    {
-      label: "yt-dlp-native-default",
-      ...base,
-      extractorArgs: "",
-      format: "default"
-    }
-  ];
-}
-
-function runYtDlpJson(ytDlpBin, search, options = {}) {
-  return new Promise((resolve, reject) => {
-    const args = buildYtDlpSearchArgs(search, options);
-    const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(friendlyYtDlpExitError(stderr, code));
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(stdout);
-        resolve(Array.isArray(parsed.entries) ? parsed.entries.filter(Boolean) : [parsed]);
-      } catch (error) {
-        reject(new Error(`Unable to parse yt-dlp search results: ${error.message}`));
-      }
-    });
-  });
-}
-
-function candidateUrl(candidate) {
-  if (candidate.webpage_url) return canonicalYouTubeWatchUrl(candidate.webpage_url);
-  if (candidate.url && isUrl(candidate.url)) return canonicalYouTubeWatchUrl(candidate.url);
-  if (candidate.id) return `https://www.youtube.com/watch?v=${candidate.id}`;
-  return candidate.url;
-}
-
 function canonicalYouTubeWatchUrl(url) {
   try {
     const parsed = new URL(url);
@@ -191,85 +21,126 @@ function canonicalYouTubeWatchUrl(url) {
   }
 }
 
-function scoreCandidate(candidate, query) {
-  const title = String(candidate.title || "").toLowerCase();
-  const uploader = String(candidate.uploader || candidate.channel || "").toLowerCase();
-  const text = `${title} ${uploader}`;
-  let score = 0;
-
-  if (text.includes("official audio")) score += 120;
-  if (uploader.includes("topic")) score += 90;
-  if (text.includes("provided to youtube")) score += 70;
-  if (text.includes("album")) score += 35;
-  if (title.includes("audio")) score += 30;
-  if (normalizeForScore(title).includes(normalizeForScore(query))) score += 25;
-
-  if (text.includes("official video")) score -= 80;
-  if (text.includes("music video")) score -= 80;
-  if (text.includes("trailer")) score -= 90;
-  if (text.includes("interview")) score -= 90;
-  if (text.includes("reaction")) score -= 90;
-  if (text.includes("live")) score -= 45;
-  if (text.includes("shorts")) score -= 40;
-  if (candidate.duration && candidate.duration > 720) score -= 40;
-
-  return score;
+function wrapSpawnError(error) {
+  if (error && error.code === "ENOENT") {
+    return new Error(
+      "yt-dlp is not installed or is not on PATH. In Termux, run: python -m pip install -U \"yt-dlp[default]\""
+    );
+  }
+  return error;
 }
 
-function normalizeForScore(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+function tail(text, lines = 10) {
+  return String(text || "").trim().split(/\r?\n/).filter(Boolean).slice(-lines).join("\n");
 }
 
-async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs }) {
-  if (isUrl(query)) {
-    return { url: canonicalYouTubeWatchUrl(query), title: query, sourceStrategy: "direct-url", score: 0 };
+function makeExitError(stderr, code, label, target) {
+  return new Error([
+    `yt-dlp failed during ${label}.`,
+    `Target: ${target}`,
+    tail(stderr) || `yt-dlp exited with code ${code}`
+  ].join("\n"));
+}
+
+function combineAttemptErrors(errors) {
+  return new Error([
+    "yt-dlp could not download a playable audio file after trying the rebuilt downloader pipeline.",
+    ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}):\n${error.message}`)
+  ].join("\n\n"));
+}
+
+function buildYtDlpBaseArgs(options = {}) {
+  const args = [];
+  if (options.jsRuntime && options.jsRuntime !== "none") {
+    args.push("--js-runtimes", options.jsRuntime);
+  }
+  if (options.remoteComponents) {
+    args.push("--remote-components", options.remoteComponents);
+  }
+  if (options.cookies) {
+    args.push("--cookies", options.cookies);
+  }
+  if (options.cookiesFromBrowser) {
+    args.push("--cookies-from-browser", options.cookiesFromBrowser);
+  }
+  return args;
+}
+
+function buildDownloadPlans(query) {
+  const trimmed = String(query || "").trim();
+  if (!trimmed) return [];
+
+  if (isUrl(trimmed)) {
+    return [{
+      label: "direct-url",
+      target: canonicalYouTubeWatchUrl(trimmed),
+      sourceStrategy: "direct-url"
+    }];
   }
 
-  const ytDlpOptions = { jsRuntime, remoteComponents, extractorArgs };
+  return [
+    {
+      label: "official-audio-search",
+      target: `ytsearch1:${trimmed} official audio`,
+      sourceStrategy: "official-audio"
+    },
+    {
+      label: "topic-track-search",
+      target: `ytsearch1:${trimmed} topic`,
+      sourceStrategy: "official-audio"
+    },
+    {
+      label: "album-track-search",
+      target: `ytsearch1:${trimmed} album track`,
+      sourceStrategy: "album-track"
+    },
+    {
+      label: "audio-track-search",
+      target: `ytsearch1:${trimmed} audio`,
+      sourceStrategy: "song-audio"
+    },
+    {
+      label: "plain-search-fallback",
+      target: `ytsearch1:${trimmed}`,
+      sourceStrategy: "fallback-video"
+    }
+  ];
+}
 
-  const preferredSearches = [
-    `ytsearch10:${query} official audio`,
-    `ytsearch10:${query} album track`
+function buildYtDlpDownloadArgs(target, musicDir, options = {}) {
+  const template = path.join(musicDir, "%(title).200s.%(ext)s");
+  const args = [
+    ...buildYtDlpBaseArgs(options),
+    "--force-overwrites",
+    "--no-continue",
+    "--retries",
+    "3",
+    "--fragment-retries",
+    "3"
   ];
 
-  for (const search of preferredSearches) {
-    const entries = await runYtDlpJson(ytDlpBin, search, ytDlpOptions);
-    const best = entries
-      .map((entry) => ({ ...entry, score: scoreCandidate(entry, query) }))
-      .sort((a, b) => b.score - a.score)[0];
-
-    if (best && best.score >= 50) {
-      return {
-        ...best,
-        url: candidateUrl(best),
-        sourceStrategy: "official-audio"
-      };
-    }
+  if (options.format) {
+    args.push("--format", options.format);
   }
 
-  const fallbackEntries = await runYtDlpJson(ytDlpBin, `ytsearch5:${query}`, ytDlpOptions);
-  const fallback = fallbackEntries
-    .map((entry) => ({ ...entry, score: scoreCandidate(entry, query) }))
-    .sort((a, b) => b.score - a.score)[0];
+  args.push(
+    "--extract-audio",
+    "--audio-format",
+    "mp3",
+    "--no-playlist",
+    "--print",
+    "after_move:filepath",
+    "-o",
+    template,
+    target
+  );
 
-  if (!fallback) {
-    throw new Error("No YouTube result found for that query");
-  }
-
-  return {
-    ...fallback,
-    url: candidateUrl(fallback),
-    sourceStrategy: "fallback-video"
-  };
+  return args;
 }
 
-function runYtDlpDownload(ytDlpBin, candidate, musicDir, options = {}) {
+function runYtDlpDownload(ytDlpBin, plan, musicDir, options = {}) {
   return new Promise((resolve, reject) => {
-    const args = buildYtDlpDownloadArgs(candidate, musicDir, options);
+    const args = buildYtDlpDownloadArgs(plan.target, musicDir, options);
     const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -282,16 +153,16 @@ function runYtDlpDownload(ytDlpBin, candidate, musicDir, options = {}) {
       stderr += chunk.toString();
     });
 
-    child.on("error", (error) => reject(wrapYtDlpSpawnError(error)));
+    child.on("error", (error) => reject(wrapSpawnError(error)));
     child.on("close", async (code) => {
       if (code !== 0) {
-        reject(friendlyYtDlpExitError(stderr, code));
+        reject(makeExitError(stderr, code, plan.label, plan.target));
         return;
       }
 
       const downloadedPath = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
       if (!downloadedPath) {
-        reject(new Error("yt-dlp did not report a downloaded file path"));
+        reject(new Error(`yt-dlp did not report a downloaded file path for ${plan.target}`));
         return;
       }
 
@@ -309,34 +180,61 @@ function runYtDlpDownload(ytDlpBin, candidate, musicDir, options = {}) {
   });
 }
 
-async function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, extractorArgs, format }) {
-  const candidate = await findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs });
-  const attempts = buildDownloadStrategies({ jsRuntime, remoteComponents, extractorArgs, format });
+async function downloadWithYtDlp({
+  ytDlpBin,
+  query,
+  musicDir,
+  jsRuntime,
+  remoteComponents,
+  cookies,
+  cookiesFromBrowser,
+  format
+}) {
+  const plans = buildDownloadPlans(query);
   const errors = [];
+  const options = {
+    jsRuntime,
+    remoteComponents,
+    cookies,
+    cookiesFromBrowser,
+    format
+  };
 
-  for (const attempt of attempts) {
+  for (const plan of plans) {
     try {
-      const downloadedPath = await runYtDlpDownload(ytDlpBin, candidate, musicDir, attempt);
+      const downloadedPath = await runYtDlpDownload(ytDlpBin, plan, musicDir, options);
       return {
         path: downloadedPath,
         candidate: {
-          ...candidate,
-          downloadStrategy: attempt.label
+          url: plan.target,
+          title: query,
+          sourceStrategy: plan.sourceStrategy,
+          downloadStrategy: plan.label
         }
       };
     } catch (error) {
-      errors.push({ label: attempt.label, message: error.message });
+      errors.push({ label: plan.label, message: error.message });
     }
   }
 
   throw combineAttemptErrors(errors);
 }
 
+async function findBestAudioCandidate({ query }) {
+  const [plan] = buildDownloadPlans(query);
+  if (!plan) throw new Error("No query provided");
+  return {
+    url: plan.target,
+    title: query,
+    sourceStrategy: plan.sourceStrategy,
+    score: plan.sourceStrategy === "official-audio" ? 100 : 0
+  };
+}
+
 module.exports = {
   downloadWithYtDlp,
   findBestAudioCandidate,
   buildYtDlpBaseArgs,
-  buildYtDlpSearchArgs,
   buildYtDlpDownloadArgs,
-  buildDownloadStrategies
+  buildDownloadPlans
 };

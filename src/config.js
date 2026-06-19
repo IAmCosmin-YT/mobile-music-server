@@ -38,8 +38,9 @@ const config = {
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
   ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
-  ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "youtube:player_client=web_safari,web",
-  ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best"
+  ytDlpCookies: process.env.YT_DLP_COOKIES || "",
+  ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
+  ytDlpFormat: process.env.YT_DLP_FORMAT || ""
 };
 
 module.exports = { config };

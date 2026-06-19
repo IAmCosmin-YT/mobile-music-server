@@ -37,8 +37,9 @@ ENABLE_REMOTE_FETCH=false
 OPUS_BITRATE=64k
 YT_DLP_JS_RUNTIME=node
 YT_DLP_REMOTE_COMPONENTS=ejs:github
-YT_DLP_EXTRACTOR_ARGS=youtube:player_client=web_safari,web
-YT_DLP_FORMAT=bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best
+YT_DLP_COOKIES=
+YT_DLP_COOKIES_FROM_BROWSER=
+YT_DLP_FORMAT=
 ```
 
 On Android, a common music path after `termux-setup-storage` is:
@@ -87,7 +88,7 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. Remote sourcing searches for YouTube Music style "Official Audio" and album-track results first, then falls back to standard video audio only when no song-first candidate is found. Downloads use `--js-runtimes node`, `--remote-components ejs:github`, canonical `www.youtube.com/watch` URLs, `youtube:player_client=web_safari,web`, and prefer direct audio streams before retrying HLS or alternate YouTube clients. If every audio-only strategy fails, the final fallback lets yt-dlp choose its native format/client and then extracts audio from that result. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader now lets yt-dlp handle search, client selection, and format selection natively. It tries staged targets in this order: `official audio`, `topic`, `album track`, `audio`, then a plain search fallback. Each successful result is post-processed to MP3 by ffmpeg. Use this only for content you have the right to download and stream.
 
 If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and confirm remote EJS component access:
 
@@ -97,6 +98,12 @@ yt-dlp --js-runtimes node --remote-components ejs:github --simulate "https://www
 ```
 
 If a specific network/video still returns `HTTP Error 403`, the error returned by the app includes the last yt-dlp lines so you can see whether YouTube is asking for a PO token, EJS update, cookies, or a different client.
+
+If YouTube requires an authenticated session for a specific track, provide cookies:
+
+```bash
+export YT_DLP_COOKIES="$HOME/youtube-cookies.txt"
+```
 
 ## Synced Lyrics
 
