@@ -37,8 +37,9 @@ const config = {
   ffmpegBin: process.env.FFMPEG_BIN || "ffmpeg",
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
-  ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "",
-  ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio[ext=m4a]/bestaudio/best"
+  ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
+  ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "youtube:player_client=web_safari,web",
+  ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio[protocol=m3u8_native]/bestaudio[ext=m4a]/bestaudio/best"
 };
 
 module.exports = { config };

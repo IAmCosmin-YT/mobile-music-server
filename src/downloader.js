@@ -17,9 +17,15 @@ function wrapYtDlpSpawnError(error) {
 
 function friendlyYtDlpExitError(stderr, code) {
   const output = String(stderr || "").trim();
+  const tail = output.split(/\r?\n/).slice(-8).join("\n");
   if (output.includes("No supported JavaScript runtime") || output.includes("HTTP Error 403")) {
     return new Error(
-      "YouTube rejected the yt-dlp request. In Termux, run: pkg install nodejs -y && python -m pip install -U \"yt-dlp[default]\". The app passes --js-runtimes node by default."
+      [
+        "YouTube rejected the yt-dlp request.",
+        "The app is already passing --js-runtimes node and audio-first format options.",
+        "Try updating yt-dlp/EJS or set YT_DLP_REMOTE_COMPONENTS=ejs:github.",
+        tail ? `yt-dlp output:\n${tail}` : ""
+      ].filter(Boolean).join("\n")
     );
   }
   return new Error(output || `yt-dlp exited with code ${code}`);
@@ -32,6 +38,9 @@ function buildYtDlpBaseArgs(options = {}) {
   }
   if (options.remoteComponents) {
     args.push("--remote-components", options.remoteComponents);
+  }
+  if (options.extractorArgs) {
+    args.push("--extractor-args", options.extractorArgs);
   }
   return args;
 }
@@ -96,10 +105,25 @@ function runYtDlpJson(ytDlpBin, search, options = {}) {
 }
 
 function candidateUrl(candidate) {
-  if (candidate.webpage_url) return candidate.webpage_url;
-  if (candidate.url && isUrl(candidate.url)) return candidate.url;
-  if (candidate.id) return `https://music.youtube.com/watch?v=${candidate.id}`;
+  if (candidate.webpage_url) return canonicalYouTubeWatchUrl(candidate.webpage_url);
+  if (candidate.url && isUrl(candidate.url)) return canonicalYouTubeWatchUrl(candidate.url);
+  if (candidate.id) return `https://www.youtube.com/watch?v=${candidate.id}`;
   return candidate.url;
+}
+
+function canonicalYouTubeWatchUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "music.youtube.com" && parsed.searchParams.has("v")) {
+      return `https://www.youtube.com/watch?v=${parsed.searchParams.get("v")}`;
+    }
+    if (parsed.hostname === "youtu.be" && parsed.pathname.length > 1) {
+      return `https://www.youtube.com/watch?v=${parsed.pathname.slice(1)}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
 }
 
 function scoreCandidate(candidate, query) {
@@ -135,12 +159,12 @@ function normalizeForScore(text) {
     .trim();
 }
 
-async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents }) {
+async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs }) {
   if (isUrl(query)) {
-    return { url: query, title: query, sourceStrategy: "direct-url", score: 0 };
+    return { url: canonicalYouTubeWatchUrl(query), title: query, sourceStrategy: "direct-url", score: 0 };
   }
 
-  const ytDlpOptions = { jsRuntime, remoteComponents };
+  const ytDlpOptions = { jsRuntime, remoteComponents, extractorArgs };
 
   const preferredSearches = [
     `ytsearch10:${query} official audio`,
@@ -178,13 +202,14 @@ async function findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteCompon
   };
 }
 
-function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, format }) {
+function downloadWithYtDlp({ ytDlpBin, query, musicDir, jsRuntime, remoteComponents, extractorArgs, format }) {
   return new Promise((resolve, reject) => {
-    findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents })
+    findBestAudioCandidate({ ytDlpBin, query, jsRuntime, remoteComponents, extractorArgs })
       .then((candidate) => {
         const args = buildYtDlpDownloadArgs(candidate, musicDir, {
           jsRuntime,
           remoteComponents,
+          extractorArgs,
           format
         });
 
