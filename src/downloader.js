@@ -48,7 +48,7 @@ function combineAttemptErrors(errors, options = {}) {
   const hints = [];
   if (/HTTP Error 403|Forbidden/i.test(joined)) {
     hints.push(
-      "YouTube returned HTTP 403 while downloading the media URL. Search can still work when media URLs are blocked, so this usually needs fresh browser-exported cookies, a newer yt-dlp/nightly, or a PO-token provider."
+      "YouTube returned HTTP 403 while downloading the media URL. Search can still work when media URLs are blocked; yt-dlp's current wiki recommends the mweb client with a PO-token provider for this case."
     );
   }
   if (options.cookies) {
@@ -62,6 +62,9 @@ function combineAttemptErrors(errors, options = {}) {
   }
   if (options.useOauth2) {
     hints.push("YT_DLP_OAUTH2 is enabled. Keep it off unless you have a yt-dlp OAuth plugin that supports this flow.");
+  }
+  if (!options.soundCloudFallback) {
+    hints.push("SoundCloud fallback is disabled, so the server will not replace a failed YouTube match with unofficial slowed/reverb uploads.");
   }
 
   return new Error([
@@ -82,11 +85,9 @@ function buildYtDlpBaseArgs(options = {}, plan = {}) {
   if (options.userAgent) {
     args.push("--user-agent", options.userAgent);
   }
-  if (plan.extractorArgs) {
-    args.push("--extractor-args", plan.extractorArgs);
-  }
-  if (options.extractorArgs) {
-    args.push("--extractor-args", options.extractorArgs);
+  const extractorArgs = options.extractorArgs || plan.extractorArgs;
+  if (extractorArgs) {
+    args.push("--extractor-args", extractorArgs);
   }
   if (options.impersonate) {
     args.push("--impersonate", options.impersonate);
@@ -112,6 +113,8 @@ function buildDownloadPlans(query, url, options = {}) {
   const trimmedUrl = String(url || "").trim();
   const trimmedQuery = String(query || "").trim();
   const useChromiumFallback = Boolean(options.chromiumFallback);
+  const useCustomExtractorArgs = Boolean(options.extractorArgs);
+  const useSoundCloudFallback = Boolean(options.soundCloudFallback);
 
   if (trimmedUrl && isUrl(trimmedUrl)) {
     if (useChromiumFallback && isYouTubeTarget(trimmedUrl)) {
@@ -123,17 +126,26 @@ function buildDownloadPlans(query, url, options = {}) {
       });
     }
     plans.push(
+      ...(!useCustomExtractorArgs && isYouTubeTarget(trimmedUrl) ? [
+        {
+          label: "direct-url-mweb-pot",
+          target: canonicalYouTubeWatchUrl(trimmedUrl),
+          sourceStrategy: "direct-url",
+          extractorArgs: "youtube:player_client=mweb"
+        }
+      ] : []),
       {
         label: "direct-url",
         target: canonicalYouTubeWatchUrl(trimmedUrl),
         sourceStrategy: "direct-url"
       },
-      {
+      ...(!useCustomExtractorArgs && isYouTubeTarget(trimmedUrl) ? [{
         label: "direct-url-web-safari",
         target: canonicalYouTubeWatchUrl(trimmedUrl),
         sourceStrategy: "direct-url",
-        extractorArgs: "youtube:player_client=web_safari"
-      },
+        extractorArgs: "youtube:player_client=web_safari",
+        format: "ba[protocol*=m3u8]/bestaudio/best"
+      }] : []),
       {
         label: "direct-url-no-cookies",
         target: canonicalYouTubeWatchUrl(trimmedUrl),
@@ -153,6 +165,20 @@ function buildDownloadPlans(query, url, options = {}) {
       });
     }
     plans.push(
+      ...(!useCustomExtractorArgs ? [
+        {
+          label: "official-audio-mweb-pot",
+          target: `ytsearch1:${trimmedQuery} official audio`,
+          sourceStrategy: "official-audio",
+          extractorArgs: "youtube:player_client=mweb"
+        },
+        {
+          label: "topic-track-mweb-pot",
+          target: `ytsearch1:${trimmedQuery} topic`,
+          sourceStrategy: "official-audio",
+          extractorArgs: "youtube:player_client=mweb"
+        }
+      ] : []),
       {
         label: "official-audio-search",
         target: `ytsearch1:${trimmedQuery} official audio`,
@@ -168,13 +194,14 @@ function buildDownloadPlans(query, url, options = {}) {
         target: `ytmsearch1:${trimmedQuery}`,
         sourceStrategy: "ytmusic"
       },
-      {
+      ...(!useCustomExtractorArgs ? [{
         label: "official-audio-web-safari-no-cookies",
         target: `ytsearch1:${trimmedQuery} official audio`,
         sourceStrategy: "official-audio",
         extractorArgs: "youtube:player_client=web_safari",
+        format: "ba[protocol*=m3u8]/bestaudio/best",
         noCookies: true
-      },
+      }] : []),
       {
         label: "topic-track-search-no-cookies",
         target: `ytsearch1:${trimmedQuery} topic`,
@@ -196,11 +223,11 @@ function buildDownloadPlans(query, url, options = {}) {
         target: `ytsearch1:${trimmedQuery}`,
         sourceStrategy: "fallback-video"
       },
-      {
+      ...(useSoundCloudFallback ? [{
         label: "soundcloud-search",
         target: `scsearch1:${trimmedQuery}`,
         sourceStrategy: "soundcloud"
-      }
+      }] : [])
     );
   }
 
@@ -419,9 +446,14 @@ async function downloadWithYtDlp({
   cookiesFromBrowser,
   useOauth2,
   chromiumFallback,
+  soundCloudFallback,
   format
 }) {
-  const plans = buildDownloadPlans(query, url, { chromiumFallback });
+  const plans = buildDownloadPlans(query, url, {
+    chromiumFallback,
+    extractorArgs,
+    soundCloudFallback
+  });
   const errors = [];
   const options = {
     jsRuntime,
@@ -432,6 +464,7 @@ async function downloadWithYtDlp({
     cookiesFromBrowser,
     useOauth2,
     chromiumFallback,
+    soundCloudFallback,
     format
   };
 

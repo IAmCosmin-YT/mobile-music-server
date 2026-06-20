@@ -52,6 +52,7 @@ YT_DLP_COOKIES=
 YT_DLP_COOKIES_FROM_BROWSER=
 YT_DLP_OAUTH2=false
 YT_DLP_CHROMIUM_FALLBACK=false
+ENABLE_SOUNDCLOUD_FALLBACK=false
 YT_DLP_FORMAT=bestaudio/best
 ```
 
@@ -101,7 +102,7 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader forces `bestaudio/best` so it avoids video streams, prioritizes `official audio`, `topic`, and YouTube Music matches, then falls back through no-cookie and standard search attempts before trying SoundCloud. The downloaded audio container is cached locally, then the app's normal ffmpeg pipeline converts it to streamable Opus. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader forces `bestaudio/best` so it avoids video streams, prioritizes `official audio`, `topic`, and YouTube Music matches, then tries YouTube client fallbacks before failing loudly. SoundCloud fallback is now disabled by default because unofficial uploads are often remixes, slowed/reverb edits, or unrelated tracks. Use remote fetch only for content you have the right to download and stream.
 
 If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and confirm remote EJS component access:
 
@@ -133,7 +134,41 @@ Then open `/health` and check:
 
 If `ytDlpCookiesFileExists` is `false`, the server process is not seeing your cookie file. Use an absolute path or `$HOME/...`; the app expands both before spawning yt-dlp.
 
-Keep `YT_DLP_OAUTH2=false` unless you have installed a yt-dlp OAuth plugin and know it supports `--username oauth2`. If YouTube requires a PO token, install a yt-dlp PO-token provider and pass any provider-specific extractor args through `YT_DLP_EXTRACTOR_ARGS`. For browser/TLS fingerprinting cases, install yt-dlp with the `curl-cffi` extra and set `YT_DLP_IMPERSONATE=chrome`.
+Keep `YT_DLP_OAUTH2=false`; the yt-dlp wiki says YouTube OAuth no longer works and cookies should be used instead.
+
+### YouTube PO Token Setup
+
+YouTube is increasingly requiring PO tokens for playback media URLs. Cookies may prove you are logged in, but they do not always satisfy the media URL request. The yt-dlp wiki currently recommends using the `mweb` client with a PO-token provider for this case.
+
+On Termux, start with the provider plugin:
+
+```bash
+python -m pip install -U bgutil-ytdlp-pot-provider
+```
+
+Then keep your normal app config:
+
+```bash
+export ENABLE_REMOTE_FETCH=true
+export YT_DLP_COOKIES="$HOME/storage/shared/Music/cookies.txt"
+export YT_DLP_EXTRACTOR_ARGS="youtube:player_client=mweb"
+```
+
+If you run the provider as a separate HTTP service on a custom URL, append that provider setting too:
+
+```bash
+export YT_DLP_EXTRACTOR_ARGS="youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416"
+```
+
+The app also tries an internal `mweb` plan when `YT_DLP_EXTRACTOR_ARGS` is empty, but installing/configuring the provider is the part that makes `mweb` useful for YouTube 403 playback errors.
+
+Only enable SoundCloud if you explicitly want unofficial matches:
+
+```bash
+export ENABLE_SOUNDCLOUD_FALLBACK=true
+```
+
+For browser/TLS fingerprinting cases, install yt-dlp with the `curl-cffi` extra and set `YT_DLP_IMPERSONATE=chrome`.
 
 The experimental Chromium fallback is disabled by default because it is heavy on Termux and requires a real Chromium executable. Enable it only when you have Chromium installed and want to debug direct browser interception:
 

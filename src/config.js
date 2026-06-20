@@ -62,6 +62,7 @@ const config = {
   ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
   ytDlpUseOauth2: boolFromEnv(process.env.YT_DLP_OAUTH2, false),
   ytDlpChromiumFallback: boolFromEnv(process.env.YT_DLP_CHROMIUM_FALLBACK, false),
+  enableSoundCloudFallback: boolFromEnv(process.env.ENABLE_SOUNDCLOUD_FALLBACK, false),
   ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio/best"
 };
 
