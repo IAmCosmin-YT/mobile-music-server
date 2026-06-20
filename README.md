@@ -138,12 +138,40 @@ Keep `YT_DLP_OAUTH2=false`; the yt-dlp wiki says YouTube OAuth no longer works a
 
 ### YouTube PO Token Setup
 
-YouTube is increasingly requiring PO tokens for playback media URLs. Cookies may prove you are logged in, but they do not always satisfy the media URL request. The yt-dlp wiki currently recommends using the `mweb` client with a PO-token provider for this case.
+YouTube is increasingly requiring PO tokens for playback media URLs. Cookies may prove you are logged in, but they do not always satisfy the media URL request. The yt-dlp wiki currently recommends using the `mweb` client with a PO-token provider for this case. The bgutil provider has two pieces: a Python plugin for yt-dlp and a local token server that must be running.
 
-On Termux, start with the provider plugin:
+Install the yt-dlp plugin:
 
 ```bash
 python -m pip install -U bgutil-ytdlp-pot-provider
+```
+
+Install and build the local bgutil provider server:
+
+```bash
+cd ~
+pkg install git nodejs clang make pkg-config libvips xorgproto -y
+mkdir -p ~/.gyp
+printf "{'variables':{'android_ndk_path':''}}\n" > ~/.gyp/include.gypi
+git clone --single-branch --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
+cd ~/bgutil-ytdlp-pot-provider/server
+npm ci
+npx tsc
+```
+
+Run the provider server in a separate Termux session:
+
+```bash
+cd ~/bgutil-ytdlp-pot-provider/server
+node build/main.js
+```
+
+Or run it in the background:
+
+```bash
+cd ~/bgutil-ytdlp-pot-provider/server
+nohup node build/main.js > ~/bgutil-pot.log 2>&1 &
+curl http://127.0.0.1:4416/ping
 ```
 
 Then keep your normal app config:
@@ -151,16 +179,10 @@ Then keep your normal app config:
 ```bash
 export ENABLE_REMOTE_FETCH=true
 export YT_DLP_COOKIES="$HOME/storage/shared/Music/cookies.txt"
-export YT_DLP_EXTRACTOR_ARGS="youtube:player_client=mweb"
-```
-
-If you run the provider as a separate HTTP service on a custom URL, append that provider setting too:
-
-```bash
 export YT_DLP_EXTRACTOR_ARGS="youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416"
 ```
 
-The app also tries an internal `mweb` plan when `YT_DLP_EXTRACTOR_ARGS` is empty, but installing/configuring the provider is the part that makes `mweb` useful for YouTube 403 playback errors.
+The app also tries an internal `mweb` plan when `YT_DLP_EXTRACTOR_ARGS` is empty, but the provider server must still be reachable for bgutil to generate tokens. If you see `Error reaching GET http://127.0.0.1:4416/ping`, the provider server is not running or crashed.
 
 Only enable SoundCloud if you explicitly want unofficial matches:
 

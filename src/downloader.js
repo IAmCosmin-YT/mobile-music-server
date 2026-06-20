@@ -51,6 +51,11 @@ function combineAttemptErrors(errors, options = {}) {
       "YouTube returned HTTP 403 while downloading the media URL. Search can still work when media URLs are blocked; yt-dlp's current wiki recommends the mweb client with a PO-token provider for this case."
     );
   }
+  if (/\[pot:bgutil:http\].*Error reaching GET .*\/ping/i.test(joined)) {
+    hints.push(
+      "The bgutil PO-token plugin is installed, but its token server is not reachable. Start the bgutil provider server and make sure http://127.0.0.1:4416/ping responds before starting the music server."
+    );
+  }
   if (options.cookies) {
     const exists = fs.existsSync(options.cookies);
     hints.push(`Cookie file configured: ${options.cookies} (${exists ? "found" : "not found by Node"})`);
@@ -188,11 +193,6 @@ function buildDownloadPlans(query, url, options = {}) {
         label: "topic-track-search",
         target: `ytsearch1:${trimmedQuery} topic`,
         sourceStrategy: "official-audio"
-      },
-      {
-        label: "ytmusic-search",
-        target: `ytmsearch1:${trimmedQuery}`,
-        sourceStrategy: "ytmusic"
       },
       ...(!useCustomExtractorArgs ? [{
         label: "official-audio-web-safari-no-cookies",
