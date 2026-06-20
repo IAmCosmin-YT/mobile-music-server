@@ -48,8 +48,9 @@ function combineAttemptErrors(errors, options = {}) {
   if (/HTTP Error 403|Forbidden/i.test(joined)) {
     hints.push(
       "YouTube returned HTTP 403 on all player client attempts. " +
-      "Ensure yt-dlp is up to date (yt-dlp -U). " +
-      "If the issue persists, try setting up a PO-token provider."
+      "Try: pip install -U yt-dlp (or: pip install -U yt-dlp-nightly for bleeding-edge fixes). " +
+      "Also try: yt-dlp --rm-cache-dir. " +
+      "If still failing, set up a PO-token provider (see yt-dlp wiki)."
     );
   }
   if (/\[pot:bgutil:http\].*Error reaching GET .*\/ping/i.test(joined)) {
@@ -150,34 +151,50 @@ function buildDownloadPlans(query, url, options = {}) {
 
   // For each target, try different player client strategies
   // These address the actual 403 problem by using different YouTube API clients
+  // Order based on latest yt-dlp community recommendations (2025/2026)
   const clientStrategies = [
+    {
+      // Reddit/community recommended combo — tries multiple clients in one call
+      label: "web_embedded+web",
+      extractorArgs: "youtube:player_client=web_embedded,web",
+      noCookies: false
+    },
     {
       label: "mweb",
       extractorArgs: "youtube:player_client=mweb",
       noCookies: false
     },
     {
+      // HLS streams often bypass 403 blocks
       label: "web_safari",
       extractorArgs: "youtube:player_client=web_safari",
       format: "ba[protocol*=m3u8]/bestaudio/best",
       noCookies: false
     },
     {
+      // Let yt-dlp pick its own default (it updates its own defaults with releases)
       label: "default",
       extractorArgs: null,
       noCookies: false
     },
     {
+      label: "tv_embedded",
+      extractorArgs: "youtube:player_client=tv_embedded",
+      noCookies: false
+    },
+    {
+      // Cookies themselves can sometimes cause 403s — try without
       label: "mweb-no-cookies",
       extractorArgs: "youtube:player_client=mweb",
       noCookies: true
     },
     {
-      label: "tv_embedded",
-      extractorArgs: "youtube:player_client=tv_embedded",
+      label: "default-no-cookies",
+      extractorArgs: null,
       noCookies: true
     }
   ];
+
 
   for (const t of targets) {
     const isYT = isYouTubeTarget(t.target) || t.target.startsWith("ytsearch");
@@ -213,6 +230,8 @@ function buildYtDlpDownloadArgs(plan, musicDir, options = {}) {
   const template = path.join(musicDir, "%(title).200s.%(ext)s");
   const args = [
     ...buildYtDlpBaseArgs(options, plan),
+    "--rm-cache-dir",
+    "--no-check-certificates",
     "--force-overwrites",
     "--no-continue",
     "--retries",
