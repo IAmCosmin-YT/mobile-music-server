@@ -48,9 +48,15 @@ function combineAttemptErrors(errors, options = {}) {
   if (/HTTP Error 403|Forbidden/i.test(joined)) {
     hints.push(
       "YouTube returned HTTP 403 on all player client attempts. " +
-      "Try: pip install -U yt-dlp (or: pip install -U yt-dlp-nightly for bleeding-edge fixes). " +
+      "Try: python -m pip install -U \"yt-dlp[default]\" (or: python -m pip install -U --pre \"yt-dlp[default]\" for bleeding-edge fixes). " +
+      "Confirm Deno is installed with: deno --version. " +
       "Also try: yt-dlp --rm-cache-dir. " +
       "If still failing, set up a PO-token provider (see yt-dlp wiki)."
+    );
+  }
+  if (/No supported JavaScript runtime could be found/i.test(joined)) {
+    hints.push(
+      "yt-dlp could not find a JavaScript runtime. Install Deno and keep YT_DLP_JS_RUNTIME=deno, or set YT_DLP_JS_RUNTIME=deno:/absolute/path/to/deno."
     );
   }
   if (/\[pot:bgutil:http\].*Error reaching GET .*\/ping/i.test(joined)) {

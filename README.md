@@ -8,7 +8,7 @@ The web app includes Home, Search, and Library tabs, a persistent mini-player, a
 
 ```bash
 pkg update
-pkg install nodejs ffmpeg python git -y
+pkg install nodejs deno ffmpeg python git -y
 ```
 
 Copy this project to the phone, then install dependencies:
@@ -22,6 +22,7 @@ Optional remote fallback uses `yt-dlp` and is disabled by default:
 ```bash
 python -m pip install -U "yt-dlp[default]"
 yt-dlp --version
+deno --version
 ```
 
 If `yt-dlp` is not on PATH but `python -m yt_dlp` works, configure:
@@ -44,7 +45,7 @@ ENABLE_REMOTE_FETCH=false
 OPUS_BITRATE=64k
 YT_DLP_BIN=yt-dlp
 YT_DLP_BIN_ARGS=
-YT_DLP_JS_RUNTIME=node
+YT_DLP_JS_RUNTIME=deno
 YT_DLP_REMOTE_COMPONENTS=ejs:github
 YT_DLP_EXTRACTOR_ARGS=
 YT_DLP_IMPERSONATE=
@@ -108,7 +109,20 @@ If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and c
 
 ```bash
 python -m pip install -U "yt-dlp[default]"
-yt-dlp --js-runtimes node --remote-components ejs:github --simulate "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+deno --version
+yt-dlp --js-runtimes deno --remote-components ejs:github --simulate "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+```
+
+The app defaults to `YT_DLP_JS_RUNTIME=deno`, matching yt-dlp's recommended JavaScript runtime. If Deno is installed but not on PATH, point directly at it:
+
+```bash
+export YT_DLP_JS_RUNTIME="deno:/absolute/path/to/deno"
+```
+
+If `pkg install deno` is not available on your Termux mirror, you can temporarily fall back to Node:
+
+```bash
+export YT_DLP_JS_RUNTIME="node:$(which node)"
 ```
 
 If stable still fails on YouTube media downloads, try yt-dlp nightly:

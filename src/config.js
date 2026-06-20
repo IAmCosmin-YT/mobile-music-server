@@ -54,7 +54,7 @@ const config = {
 
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpBinArgs: splitArgs(process.env.YT_DLP_BIN_ARGS),
-  ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
+  ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "deno",
   ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
   ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "",
   ytDlpImpersonate: process.env.YT_DLP_IMPERSONATE || "",
