@@ -69,6 +69,9 @@ function buildYtDlpBaseArgs(options = {}, plan = {}) {
   if (options.cookiesFromBrowser && !plan.noCookies) {
     args.push("--cookies-from-browser", options.cookiesFromBrowser);
   }
+  if (options.useOauth2 && !plan.noCookies) {
+    args.push("--username", "oauth2", "--password", "");
+  }
   return args;
 }
 
@@ -222,6 +225,7 @@ async function downloadWithYtDlp({
   impersonate,
   cookies,
   cookiesFromBrowser,
+  useOauth2,
   format
 }) {
   const plans = buildDownloadPlans(query, url);
@@ -233,6 +237,7 @@ async function downloadWithYtDlp({
     impersonate,
     cookies,
     cookiesFromBrowser,
+    useOauth2,
     format
   };
 
@@ -307,7 +312,8 @@ async function searchRemoteWithYtDlp({
   extractorArgs,
   impersonate,
   cookies,
-  cookiesFromBrowser
+  cookiesFromBrowser,
+  useOauth2
 }) {
   const target = `ytsearch5:${query}`;
   const options = {
@@ -316,7 +322,8 @@ async function searchRemoteWithYtDlp({
     extractorArgs,
     impersonate,
     cookies,
-    cookiesFromBrowser
+    cookiesFromBrowser,
+    useOauth2
   };
 
   const results = await runYtDlpSearch(ytDlpBin, target, options);

@@ -55,6 +55,7 @@ async function findOrFetch(query, forceUrl = null) {
     impersonate: config.ytDlpImpersonate,
     cookies: config.ytDlpCookies,
     cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
+    useOauth2: config.ytDlpUseOauth2,
     format: config.ytDlpFormat,
     query: query,
     url: forceUrl,
@@ -187,7 +188,8 @@ app.get("/search-remote", asyncRoute(async (req, res) => {
     extractorArgs: config.ytDlpExtractorArgs,
     impersonate: config.ytDlpImpersonate,
     cookies: config.ytDlpCookies,
-    cookiesFromBrowser: config.ytDlpCookiesFromBrowser
+    cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
+    useOauth2: config.ytDlpUseOauth2
   });
   res.json({ ok: true, query, results });
 }));

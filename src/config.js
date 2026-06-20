@@ -42,6 +42,7 @@ const config = {
   ytDlpImpersonate: process.env.YT_DLP_IMPERSONATE || "",
   ytDlpCookies: process.env.YT_DLP_COOKIES || "",
   ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
+  ytDlpUseOauth2: process.env.YT_DLP_OAUTH2 !== "false",
   ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio/best"
 };
 
