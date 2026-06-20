@@ -19,7 +19,9 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
-    "music-metadata": "^11.13.0"
+    "music-metadata": "^11.13.0",
+    "play-dl": "^1.9.7",
+    "puppeteer-core": "^24.43.1"
   },
   "engines": {
     "node": ">=20"

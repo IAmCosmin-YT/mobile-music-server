@@ -35,6 +35,7 @@ const config = {
   enableRemoteFetch: boolFromEnv(process.env.ENABLE_REMOTE_FETCH, false),
   opusBitrate: process.env.OPUS_BITRATE || "64k",
   ffmpegBin: process.env.FFMPEG_BIN || "ffmpeg",
+  chromiumPath: process.env.CHROMIUM_PATH || "",
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
   ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
