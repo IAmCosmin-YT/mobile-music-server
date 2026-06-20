@@ -49,6 +49,7 @@ async function findOrFetch(query, forceUrl = null) {
   await fs.promises.mkdir(config.musicDir, { recursive: true });
   const downloaded = await downloadWithYtDlp({
     ytDlpBin: config.ytDlpBin,
+    ytDlpBinArgs: config.ytDlpBinArgs,
     jsRuntime: config.ytDlpJsRuntime,
     remoteComponents: config.ytDlpRemoteComponents,
     extractorArgs: config.ytDlpExtractorArgs,
@@ -56,6 +57,7 @@ async function findOrFetch(query, forceUrl = null) {
     cookies: config.ytDlpCookies,
     cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
     useOauth2: config.ytDlpUseOauth2,
+    chromiumFallback: config.ytDlpChromiumFallback,
     format: config.ytDlpFormat,
     query: query,
     url: forceUrl,
@@ -120,10 +122,17 @@ app.get("/health", (req, res) => {
     remoteFetchEnabled: config.enableRemoteFetch,
     ytDlpJsRuntime: config.ytDlpJsRuntime,
     ytDlpRemoteComponents: config.ytDlpRemoteComponents || null,
+    ytDlpBin: config.ytDlpBin,
+    ytDlpBinArgs: config.ytDlpBinArgs,
     ytDlpExtractorArgs: config.ytDlpExtractorArgs || null,
     ytDlpImpersonate: config.ytDlpImpersonate || null,
     ytDlpCookiesConfigured: Boolean(config.ytDlpCookies),
+    ytDlpCookiesPath: config.ytDlpCookies || null,
+    ytDlpCookiesFileExists: config.ytDlpCookies ? fs.existsSync(config.ytDlpCookies) : null,
     ytDlpCookiesFromBrowser: config.ytDlpCookiesFromBrowser || null,
+    ytDlpOauth2Enabled: Boolean(config.ytDlpUseOauth2),
+    ytDlpChromiumFallback: Boolean(config.ytDlpChromiumFallback),
+    chromiumPath: config.chromiumPath || null,
     ytDlpFormat: config.ytDlpFormat || null,
     opusBitrate: config.opusBitrate
   });
@@ -182,6 +191,7 @@ app.get("/search-remote", asyncRoute(async (req, res) => {
   }
   const results = await searchRemoteWithYtDlp({
     ytDlpBin: config.ytDlpBin,
+    ytDlpBinArgs: config.ytDlpBinArgs,
     query,
     jsRuntime: config.ytDlpJsRuntime,
     remoteComponents: config.ytDlpRemoteComponents,

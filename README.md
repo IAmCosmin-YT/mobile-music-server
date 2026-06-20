@@ -24,6 +24,13 @@ python -m pip install -U "yt-dlp[default]"
 yt-dlp --version
 ```
 
+If `yt-dlp` is not on PATH but `python -m yt_dlp` works, configure:
+
+```bash
+export YT_DLP_BIN=python
+export YT_DLP_BIN_ARGS="-m yt_dlp"
+```
+
 ## Configuration
 
 Create a `.env` file or export environment variables before starting:
@@ -35,12 +42,16 @@ CACHE_DIR=./cache
 DB_PATH=./music-db.json
 ENABLE_REMOTE_FETCH=false
 OPUS_BITRATE=64k
+YT_DLP_BIN=yt-dlp
+YT_DLP_BIN_ARGS=
 YT_DLP_JS_RUNTIME=node
 YT_DLP_REMOTE_COMPONENTS=ejs:github
 YT_DLP_EXTRACTOR_ARGS=
 YT_DLP_IMPERSONATE=
 YT_DLP_COOKIES=
 YT_DLP_COOKIES_FROM_BROWSER=
+YT_DLP_OAUTH2=false
+YT_DLP_CHROMIUM_FALLBACK=false
 YT_DLP_FORMAT=bestaudio/best
 ```
 
@@ -90,13 +101,19 @@ Remote fetch is off unless explicitly enabled:
 export ENABLE_REMOTE_FETCH=true
 ```
 
-When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader now lets yt-dlp handle search and client selection natively while forcing `bestaudio/best` so it never tries to fetch a video stream. It tries staged targets in this order: `official audio`, `topic`, `album track`, `audio`, then a plain search fallback. The downloaded audio container is cached locally, then the app's normal ffmpeg pipeline converts it to streamable Opus. Use this only for content you have the right to download and stream.
+When enabled, `/resolve` and `/search-and-play` can call `yt-dlp` for a missing query, save the downloaded audio into `MUSIC_DIR`, rescan, then stream it. The downloader forces `bestaudio/best` so it avoids video streams, prioritizes `official audio`, `topic`, and YouTube Music matches, then falls back through no-cookie and standard search attempts before trying SoundCloud. The downloaded audio container is cached locally, then the app's normal ffmpeg pipeline converts it to streamable Opus. Use this only for content you have the right to download and stream.
 
 If YouTube returns `HTTP Error 403` after installing yt-dlp, update yt-dlp and confirm remote EJS component access:
 
 ```bash
 python -m pip install -U "yt-dlp[default]"
 yt-dlp --js-runtimes node --remote-components ejs:github --simulate "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+```
+
+If stable still fails on YouTube media downloads, try yt-dlp nightly:
+
+```bash
+python -m pip install -U --pre "yt-dlp[default]"
 ```
 
 If a specific network/video still returns `HTTP Error 403`, the error returned by the app includes the last yt-dlp lines so you can see whether YouTube is asking for a PO token, EJS update, cookies, or a different client.
@@ -107,7 +124,23 @@ If YouTube requires an authenticated session for a specific track, provide cooki
 export YT_DLP_COOKIES="$HOME/youtube-cookies.txt"
 ```
 
-If YouTube requires a PO token, install a yt-dlp PO-token provider and pass any provider-specific extractor args through `YT_DLP_EXTRACTOR_ARGS`. For browser/TLS fingerprinting cases, install yt-dlp with the `curl-cffi` extra and set `YT_DLP_IMPERSONATE=chrome`.
+Then open `/health` and check:
+
+```json
+"ytDlpCookiesConfigured": true,
+"ytDlpCookiesFileExists": true
+```
+
+If `ytDlpCookiesFileExists` is `false`, the server process is not seeing your cookie file. Use an absolute path or `$HOME/...`; the app expands both before spawning yt-dlp.
+
+Keep `YT_DLP_OAUTH2=false` unless you have installed a yt-dlp OAuth plugin and know it supports `--username oauth2`. If YouTube requires a PO token, install a yt-dlp PO-token provider and pass any provider-specific extractor args through `YT_DLP_EXTRACTOR_ARGS`. For browser/TLS fingerprinting cases, install yt-dlp with the `curl-cffi` extra and set `YT_DLP_IMPERSONATE=chrome`.
+
+The experimental Chromium fallback is disabled by default because it is heavy on Termux and requires a real Chromium executable. Enable it only when you have Chromium installed and want to debug direct browser interception:
+
+```bash
+export YT_DLP_CHROMIUM_FALLBACK=true
+export CHROMIUM_PATH="/data/data/com.termux/files/usr/bin/chromium"
+```
 
 ## Synced Lyrics
 

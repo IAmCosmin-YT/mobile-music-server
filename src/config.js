@@ -27,6 +27,22 @@ function resolveFromCwd(value, fallback) {
   return path.resolve(process.cwd(), value || fallback);
 }
 
+function expandPath(value) {
+  if (!value) return "";
+  const raw = String(value);
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const expanded = raw
+    .replace(/^~(?=$|[\\/])/, home)
+    .replace(/^\$HOME(?=$|[\\/])/, home);
+  return path.resolve(process.cwd(), expanded);
+}
+
+function splitArgs(value) {
+  if (!value) return [];
+  const matches = String(value).match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+  return matches.map((item) => item.replace(/^["']|["']$/g, ""));
+}
+
 const config = {
   port: Number(process.env.PORT || 3000),
   musicDir: resolveFromCwd(process.env.MUSIC_DIR, "./music"),
@@ -37,14 +53,16 @@ const config = {
   ffmpegBin: process.env.FFMPEG_BIN || "ffmpeg",
   chromiumPath: process.env.CHROMIUM_PATH || "",
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
+  ytDlpBinArgs: splitArgs(process.env.YT_DLP_BIN_ARGS),
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
   ytDlpRemoteComponents: process.env.YT_DLP_REMOTE_COMPONENTS || "ejs:github",
   ytDlpExtractorArgs: process.env.YT_DLP_EXTRACTOR_ARGS || "",
   ytDlpImpersonate: process.env.YT_DLP_IMPERSONATE || "",
-  ytDlpCookies: process.env.YT_DLP_COOKIES || "",
+  ytDlpCookies: expandPath(process.env.YT_DLP_COOKIES),
   ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
-  ytDlpUseOauth2: process.env.YT_DLP_OAUTH2 !== "false",
+  ytDlpUseOauth2: boolFromEnv(process.env.YT_DLP_OAUTH2, false),
+  ytDlpChromiumFallback: boolFromEnv(process.env.YT_DLP_CHROMIUM_FALLBACK, false),
   ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio/best"
 };
 
-module.exports = { config };
+module.exports = { config, expandPath, splitArgs };

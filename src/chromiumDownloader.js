@@ -190,8 +190,9 @@ async function extractAudioUrl(youtubeUrl) {
     }
 
     if (!capturedUrl && !poToken) {
-      const debugScreenshotPath = path.join(process.cwd(), "test_timeout.png");
+      const debugScreenshotPath = path.join(config.cacheDir, "chromium-timeout.png");
       try {
+        fs.mkdirSync(config.cacheDir, { recursive: true });
         await page.screenshot({ path: debugScreenshotPath });
         console.log(`[Chromium] Saved debug screenshot to: ${debugScreenshotPath}`);
       } catch (screenshotError) {

@@ -43,9 +43,30 @@ function makeExitError(stderr, code, label, target) {
   ].join("\n"));
 }
 
-function combineAttemptErrors(errors) {
+function combineAttemptErrors(errors, options = {}) {
+  const joined = errors.map((error) => error.message).join("\n");
+  const hints = [];
+  if (/HTTP Error 403|Forbidden/i.test(joined)) {
+    hints.push(
+      "YouTube returned HTTP 403 while downloading the media URL. Search can still work when media URLs are blocked, so this usually needs fresh browser-exported cookies, a newer yt-dlp/nightly, or a PO-token provider."
+    );
+  }
+  if (options.cookies) {
+    const exists = fs.existsSync(options.cookies);
+    hints.push(`Cookie file configured: ${options.cookies} (${exists ? "found" : "not found by Node"})`);
+  } else {
+    hints.push("No YT_DLP_COOKIES file is configured for the server process.");
+  }
+  if (options.cookiesFromBrowser) {
+    hints.push(`cookies-from-browser configured: ${options.cookiesFromBrowser}`);
+  }
+  if (options.useOauth2) {
+    hints.push("YT_DLP_OAUTH2 is enabled. Keep it off unless you have a yt-dlp OAuth plugin that supports this flow.");
+  }
+
   return new Error([
-    "yt-dlp could not download a playable audio file after trying the rebuilt downloader pipeline.",
+    "yt-dlp could not download a playable audio file after trying the downloader pipeline.",
+    ...hints,
     ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}):\n${error.message}`)
   ].join("\n\n"));
 }
@@ -60,6 +81,9 @@ function buildYtDlpBaseArgs(options = {}, plan = {}) {
   }
   if (options.userAgent) {
     args.push("--user-agent", options.userAgent);
+  }
+  if (plan.extractorArgs) {
+    args.push("--extractor-args", plan.extractorArgs);
   }
   if (options.extractorArgs) {
     args.push("--extractor-args", options.extractorArgs);
@@ -79,13 +103,18 @@ function buildYtDlpBaseArgs(options = {}, plan = {}) {
   return args;
 }
 
-function buildDownloadPlans(query, url) {
+function isYouTubeTarget(value) {
+  return /(^|:\/\/)(www\.youtube\.com|music\.youtube\.com|youtu\.be)\//i.test(String(value || ""));
+}
+
+function buildDownloadPlans(query, url, options = {}) {
   const plans = [];
   const trimmedUrl = String(url || "").trim();
   const trimmedQuery = String(query || "").trim();
+  const useChromiumFallback = Boolean(options.chromiumFallback);
 
   if (trimmedUrl && isUrl(trimmedUrl)) {
-    if (trimmedUrl.includes("youtube.com") || trimmedUrl.includes("youtu.be")) {
+    if (useChromiumFallback && isYouTubeTarget(trimmedUrl)) {
       plans.push({
         label: "chromium-interception",
         target: canonicalYouTubeWatchUrl(trimmedUrl),
@@ -93,33 +122,37 @@ function buildDownloadPlans(query, url) {
         useChromium: true
       });
     }
-    plans.push({
-      label: "direct-url",
-      target: canonicalYouTubeWatchUrl(trimmedUrl),
-      sourceStrategy: "direct-url"
-    });
-    plans.push({
-      label: "direct-url-no-cookies",
-      target: canonicalYouTubeWatchUrl(trimmedUrl),
-      sourceStrategy: "direct-url",
-      noCookies: true
-    });
+    plans.push(
+      {
+        label: "direct-url",
+        target: canonicalYouTubeWatchUrl(trimmedUrl),
+        sourceStrategy: "direct-url"
+      },
+      {
+        label: "direct-url-web-safari",
+        target: canonicalYouTubeWatchUrl(trimmedUrl),
+        sourceStrategy: "direct-url",
+        extractorArgs: "youtube:player_client=web_safari"
+      },
+      {
+        label: "direct-url-no-cookies",
+        target: canonicalYouTubeWatchUrl(trimmedUrl),
+        sourceStrategy: "direct-url",
+        noCookies: true
+      }
+    );
   }
 
   if (trimmedQuery && !isUrl(trimmedQuery)) {
-    plans.push(
-      {
+    if (useChromiumFallback) {
+      plans.push({
         label: "chromium-search-fallback",
         target: `ytsearch1:${trimmedQuery} official audio`,
         sourceStrategy: "official-audio",
         useChromium: true
-      },
-      {
-        label: "topic-track-search-no-cookies",
-        target: `ytsearch1:${trimmedQuery} topic`,
-        sourceStrategy: "official-audio",
-        noCookies: true
-      },
+      });
+    }
+    plans.push(
       {
         label: "official-audio-search",
         target: `ytsearch1:${trimmedQuery} official audio`,
@@ -131,9 +164,21 @@ function buildDownloadPlans(query, url) {
         sourceStrategy: "official-audio"
       },
       {
-        label: "ytmusic-search-no-cookies",
+        label: "ytmusic-search",
         target: `ytmsearch1:${trimmedQuery}`,
-        sourceStrategy: "ytmusic",
+        sourceStrategy: "ytmusic"
+      },
+      {
+        label: "official-audio-web-safari-no-cookies",
+        target: `ytsearch1:${trimmedQuery} official audio`,
+        sourceStrategy: "official-audio",
+        extractorArgs: "youtube:player_client=web_safari",
+        noCookies: true
+      },
+      {
+        label: "topic-track-search-no-cookies",
+        target: `ytsearch1:${trimmedQuery} topic`,
+        sourceStrategy: "official-audio",
         noCookies: true
       },
       {
@@ -174,8 +219,9 @@ function buildYtDlpDownloadArgs(plan, musicDir, options = {}) {
     "3"
   ];
 
-  if (options.format) {
-    args.push("--format", options.format);
+  const format = plan.format || options.format;
+  if (format) {
+    args.push("--format", format);
   }
 
   args.push(
@@ -190,10 +236,14 @@ function buildYtDlpDownloadArgs(plan, musicDir, options = {}) {
   return args;
 }
 
-function runYtDlpDownload(ytDlpBin, plan, musicDir, options = {}) {
+function spawnYtDlp(ytDlpBin, ytDlpBinArgs, args) {
+  return spawn(ytDlpBin, [...(ytDlpBinArgs || []), ...args], { stdio: ["ignore", "pipe", "pipe"] });
+}
+
+function runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options = {}) {
   return new Promise((resolve, reject) => {
     const args = buildYtDlpDownloadArgs(plan, musicDir, options);
-    const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnYtDlp(ytDlpBin, ytDlpBinArgs, args);
     let stdout = "";
     let stderr = "";
 
@@ -250,7 +300,7 @@ function saveCookiesToNetscapeFile(cookies, filePath) {
   fs.writeFileSync(filePath, content, "utf8");
 }
 
-async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin) {
+async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin, ytDlpBinArgs) {
   let targetUrl = plan.target;
 
   if (!isUrl(targetUrl)) {
@@ -259,6 +309,7 @@ async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin) {
     try {
       const searchResults = await searchRemoteWithYtDlp({
         ytDlpBin,
+        ytDlpBinArgs,
         query: cleanQuery,
         jsRuntime: options.jsRuntime,
         remoteComponents: options.remoteComponents,
@@ -324,7 +375,7 @@ async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin) {
           label: `${plan.label}-with-potoken`
         };
 
-        const downloadedPath = await runYtDlpDownload(ytDlpBin, tempPlan, musicDir, ytDlpOptions);
+        const downloadedPath = await runYtDlpDownload(ytDlpBin, ytDlpBinArgs, tempPlan, musicDir, ytDlpOptions);
         console.log("[Chromium] Successful download via yt-dlp using PO Token!");
         return { path: downloadedPath, resolvedUrl: targetUrl };
       } catch (ytDlpError) {
@@ -356,6 +407,7 @@ async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin) {
 
 async function downloadWithYtDlp({
   ytDlpBin,
+  ytDlpBinArgs,
   query,
   url,
   musicDir,
@@ -366,9 +418,10 @@ async function downloadWithYtDlp({
   cookies,
   cookiesFromBrowser,
   useOauth2,
+  chromiumFallback,
   format
 }) {
-  const plans = buildDownloadPlans(query, url);
+  const plans = buildDownloadPlans(query, url, { chromiumFallback });
   const errors = [];
   const options = {
     jsRuntime,
@@ -378,19 +431,24 @@ async function downloadWithYtDlp({
     cookies,
     cookiesFromBrowser,
     useOauth2,
+    chromiumFallback,
     format
   };
+
+  if (plans.length === 0) {
+    throw new Error("No query or URL was provided for remote download.");
+  }
 
   for (const plan of plans) {
     try {
       let downloadedPath;
       let resolvedUrl = plan.target;
       if (plan.useChromium) {
-        const res = await runChromiumDownload(plan, musicDir, query, options, ytDlpBin);
+        const res = await runChromiumDownload(plan, musicDir, query, options, ytDlpBin, ytDlpBinArgs);
         downloadedPath = res.path;
         resolvedUrl = res.resolvedUrl;
       } else {
-        downloadedPath = await runYtDlpDownload(ytDlpBin, plan, musicDir, options);
+        downloadedPath = await runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options);
       }
       return {
         path: downloadedPath,
@@ -406,10 +464,10 @@ async function downloadWithYtDlp({
     }
   }
 
-  throw combineAttemptErrors(errors);
+  throw combineAttemptErrors(errors, options);
 }
 
-function runYtDlpSearch(ytDlpBin, target, options = {}) {
+function runYtDlpSearch(ytDlpBin, ytDlpBinArgs, target, options = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       ...buildYtDlpBaseArgs(options),
@@ -418,7 +476,7 @@ function runYtDlpSearch(ytDlpBin, target, options = {}) {
       target
     ];
 
-    const child = spawn(ytDlpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnYtDlp(ytDlpBin, ytDlpBinArgs, args);
     let stdout = "";
     let stderr = "";
 
@@ -454,6 +512,7 @@ function runYtDlpSearch(ytDlpBin, target, options = {}) {
 
 async function searchRemoteWithYtDlp({
   ytDlpBin,
+  ytDlpBinArgs,
   query,
   jsRuntime,
   remoteComponents,
@@ -474,7 +533,7 @@ async function searchRemoteWithYtDlp({
     useOauth2
   };
 
-  const results = await runYtDlpSearch(ytDlpBin, target, options);
+  const results = await runYtDlpSearch(ytDlpBin, ytDlpBinArgs, target, options);
   return results.map(r => ({
     id: r.id,
     title: r.title,
@@ -502,5 +561,6 @@ module.exports = {
   findBestAudioCandidate,
   buildYtDlpBaseArgs,
   buildYtDlpDownloadArgs,
-  buildDownloadPlans
+  buildDownloadPlans,
+  spawnYtDlp
 };
