@@ -57,7 +57,6 @@ async function findOrFetch(query, forceUrl = null) {
     cookies: config.ytDlpCookies,
     cookiesFromBrowser: config.ytDlpCookiesFromBrowser,
     useOauth2: config.ytDlpUseOauth2,
-    chromiumFallback: config.ytDlpChromiumFallback,
     soundCloudFallback: config.enableSoundCloudFallback,
     format: config.ytDlpFormat,
     query: query,
@@ -132,9 +131,7 @@ app.get("/health", (req, res) => {
     ytDlpCookiesFileExists: config.ytDlpCookies ? fs.existsSync(config.ytDlpCookies) : null,
     ytDlpCookiesFromBrowser: config.ytDlpCookiesFromBrowser || null,
     ytDlpOauth2Enabled: Boolean(config.ytDlpUseOauth2),
-    ytDlpChromiumFallback: Boolean(config.ytDlpChromiumFallback),
     soundCloudFallbackEnabled: Boolean(config.enableSoundCloudFallback),
-    chromiumPath: config.chromiumPath || null,
     ytDlpFormat: config.ytDlpFormat || null,
     opusBitrate: config.opusBitrate
   });

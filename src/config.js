@@ -51,7 +51,7 @@ const config = {
   enableRemoteFetch: boolFromEnv(process.env.ENABLE_REMOTE_FETCH, false),
   opusBitrate: process.env.OPUS_BITRATE || "64k",
   ffmpegBin: process.env.FFMPEG_BIN || "ffmpeg",
-  chromiumPath: process.env.CHROMIUM_PATH || "",
+
   ytDlpBin: process.env.YT_DLP_BIN || "yt-dlp",
   ytDlpBinArgs: splitArgs(process.env.YT_DLP_BIN_ARGS),
   ytDlpJsRuntime: process.env.YT_DLP_JS_RUNTIME || "node",
@@ -61,7 +61,7 @@ const config = {
   ytDlpCookies: expandPath(process.env.YT_DLP_COOKIES),
   ytDlpCookiesFromBrowser: process.env.YT_DLP_COOKIES_FROM_BROWSER || "",
   ytDlpUseOauth2: boolFromEnv(process.env.YT_DLP_OAUTH2, false),
-  ytDlpChromiumFallback: boolFromEnv(process.env.YT_DLP_CHROMIUM_FALLBACK, false),
+
   enableSoundCloudFallback: boolFromEnv(process.env.ENABLE_SOUNDCLOUD_FALLBACK, false),
   ytDlpFormat: process.env.YT_DLP_FORMAT || "bestaudio/best"
 };

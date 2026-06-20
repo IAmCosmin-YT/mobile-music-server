@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
-const { extractAudioUrl, downloadAudioStream } = require("./chromiumDownloader");
 
 function isUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
@@ -48,37 +47,37 @@ function combineAttemptErrors(errors, options = {}) {
   const hints = [];
   if (/HTTP Error 403|Forbidden/i.test(joined)) {
     hints.push(
-      "YouTube returned HTTP 403 while downloading the media URL. Search can still work when media URLs are blocked; yt-dlp's current wiki recommends the mweb client with a PO-token provider for this case."
+      "YouTube returned HTTP 403 on all player client attempts. " +
+      "Ensure yt-dlp is up to date (yt-dlp -U). " +
+      "If the issue persists, try setting up a PO-token provider."
     );
   }
   if (/\[pot:bgutil:http\].*Error reaching GET .*\/ping/i.test(joined)) {
     hints.push(
-      "The bgutil PO-token plugin is installed, but its token server is not reachable. Start the bgutil provider server and make sure http://127.0.0.1:4416/ping responds before starting the music server."
+      "The bgutil PO-token plugin is installed but its token server is not reachable. " +
+      "Start the bgutil provider server before the music server."
     );
   }
   if (options.cookies) {
     const exists = fs.existsSync(options.cookies);
-    hints.push(`Cookie file configured: ${options.cookies} (${exists ? "found" : "not found by Node"})`);
-  } else {
-    hints.push("No YT_DLP_COOKIES file is configured for the server process.");
-  }
-  if (options.cookiesFromBrowser) {
-    hints.push(`cookies-from-browser configured: ${options.cookiesFromBrowser}`);
-  }
-  if (options.useOauth2) {
-    hints.push("YT_DLP_OAUTH2 is enabled. Keep it off unless you have a yt-dlp OAuth plugin that supports this flow.");
+    hints.push(`Cookie file: ${options.cookies} (${exists ? "found" : "NOT FOUND"})`);
   }
   if (!options.soundCloudFallback) {
-    hints.push("SoundCloud fallback is disabled, so the server will not replace a failed YouTube match with unofficial slowed/reverb uploads.");
+    hints.push("SoundCloud fallback is disabled.");
   }
 
   return new Error([
-    "yt-dlp could not download a playable audio file after trying the downloader pipeline.",
+    "All download attempts failed.",
     ...hints,
-    ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}):\n${error.message}`)
-  ].join("\n\n"));
+    "",
+    ...errors.map((error, index) => `Attempt ${index + 1} (${error.label}): ${tail(error.message, 3)}`)
+  ].join("\n"));
 }
 
+/**
+ * Build base yt-dlp arguments from global options, merged with plan-level overrides.
+ * Plan-level extractorArgs are MERGED with (not replaced by) global extractorArgs.
+ */
 function buildYtDlpBaseArgs(options = {}, plan = {}) {
   const args = [];
   if (options.jsRuntime && options.jsRuntime !== "none") {
@@ -90,10 +89,15 @@ function buildYtDlpBaseArgs(options = {}, plan = {}) {
   if (options.userAgent) {
     args.push("--user-agent", options.userAgent);
   }
-  const extractorArgs = options.extractorArgs || plan.extractorArgs;
-  if (extractorArgs) {
-    args.push("--extractor-args", extractorArgs);
+
+  // Merge extractor args: plan-level args take priority, global args are appended
+  const planArgs = plan.extractorArgs || "";
+  const globalArgs = options.extractorArgs || "";
+  const mergedArgs = [planArgs, globalArgs].filter(Boolean).join(";");
+  if (mergedArgs) {
+    args.push("--extractor-args", mergedArgs);
   }
+
   if (options.impersonate) {
     args.push("--impersonate", options.impersonate);
   }
@@ -113,122 +117,93 @@ function isYouTubeTarget(value) {
   return /(^|:\/\/)(www\.youtube\.com|music\.youtube\.com|youtu\.be)\//i.test(String(value || ""));
 }
 
+/**
+ * Build download plans. The key change: instead of varying the SEARCH QUERY
+ * (official audio, topic, album track, etc.), we vary the PLAYER CLIENT
+ * (mweb, web_safari, default, tv_embedded). The search query is resolved once.
+ *
+ * For a direct URL:  try the URL with each player client
+ * For a query:       search once with ytsearch1, then try each player client
+ */
 function buildDownloadPlans(query, url, options = {}) {
   const plans = [];
   const trimmedUrl = String(url || "").trim();
   const trimmedQuery = String(query || "").trim();
-  const useChromiumFallback = Boolean(options.chromiumFallback);
-  const useCustomExtractorArgs = Boolean(options.extractorArgs);
   const useSoundCloudFallback = Boolean(options.soundCloudFallback);
 
+  // Resolve the target(s) — URL takes priority, then query-based search
+  const targets = [];
+
   if (trimmedUrl && isUrl(trimmedUrl)) {
-    if (useChromiumFallback && isYouTubeTarget(trimmedUrl)) {
-      plans.push({
-        label: "chromium-interception",
-        target: canonicalYouTubeWatchUrl(trimmedUrl),
-        sourceStrategy: "direct-url",
-        useChromium: true
-      });
-    }
-    plans.push(
-      ...(!useCustomExtractorArgs && isYouTubeTarget(trimmedUrl) ? [
-        {
-          label: "direct-url-mweb-pot",
-          target: canonicalYouTubeWatchUrl(trimmedUrl),
-          sourceStrategy: "direct-url",
-          extractorArgs: "youtube:player_client=mweb"
-        }
-      ] : []),
-      {
-        label: "direct-url",
-        target: canonicalYouTubeWatchUrl(trimmedUrl),
-        sourceStrategy: "direct-url"
-      },
-      ...(!useCustomExtractorArgs && isYouTubeTarget(trimmedUrl) ? [{
-        label: "direct-url-web-safari",
-        target: canonicalYouTubeWatchUrl(trimmedUrl),
-        sourceStrategy: "direct-url",
-        extractorArgs: "youtube:player_client=web_safari",
-        format: "ba[protocol*=m3u8]/bestaudio/best"
-      }] : []),
-      {
-        label: "direct-url-no-cookies",
-        target: canonicalYouTubeWatchUrl(trimmedUrl),
-        sourceStrategy: "direct-url",
-        noCookies: true
-      }
-    );
+    const canonical = isYouTubeTarget(trimmedUrl)
+      ? canonicalYouTubeWatchUrl(trimmedUrl)
+      : trimmedUrl;
+    targets.push({ target: canonical, sourceStrategy: "direct-url" });
   }
 
   if (trimmedQuery && !isUrl(trimmedQuery)) {
-    if (useChromiumFallback) {
+    targets.push({
+      target: `ytsearch1:${trimmedQuery}`,
+      sourceStrategy: "search"
+    });
+  }
+
+  // For each target, try different player client strategies
+  // These address the actual 403 problem by using different YouTube API clients
+  const clientStrategies = [
+    {
+      label: "mweb",
+      extractorArgs: "youtube:player_client=mweb",
+      noCookies: false
+    },
+    {
+      label: "web_safari",
+      extractorArgs: "youtube:player_client=web_safari",
+      format: "ba[protocol*=m3u8]/bestaudio/best",
+      noCookies: false
+    },
+    {
+      label: "default",
+      extractorArgs: null,
+      noCookies: false
+    },
+    {
+      label: "mweb-no-cookies",
+      extractorArgs: "youtube:player_client=mweb",
+      noCookies: true
+    },
+    {
+      label: "tv_embedded",
+      extractorArgs: "youtube:player_client=tv_embedded",
+      noCookies: true
+    }
+  ];
+
+  for (const t of targets) {
+    const isYT = isYouTubeTarget(t.target) || t.target.startsWith("ytsearch");
+    for (const strategy of clientStrategies) {
+      // Only apply YouTube client strategies to YouTube targets
+      if (strategy.extractorArgs && !isYT) {
+        if (strategy.label !== "default") continue;
+      }
       plans.push({
-        label: "chromium-search-fallback",
-        target: `ytsearch1:${trimmedQuery} official audio`,
-        sourceStrategy: "official-audio",
-        useChromium: true
+        label: `${t.sourceStrategy}-${strategy.label}`,
+        target: t.target,
+        sourceStrategy: t.sourceStrategy,
+        extractorArgs: strategy.extractorArgs || undefined,
+        format: strategy.format || undefined,
+        noCookies: strategy.noCookies || false
       });
     }
-    plans.push(
-      ...(!useCustomExtractorArgs ? [
-        {
-          label: "official-audio-mweb-pot",
-          target: `ytsearch1:${trimmedQuery} official audio`,
-          sourceStrategy: "official-audio",
-          extractorArgs: "youtube:player_client=mweb"
-        },
-        {
-          label: "topic-track-mweb-pot",
-          target: `ytsearch1:${trimmedQuery} topic`,
-          sourceStrategy: "official-audio",
-          extractorArgs: "youtube:player_client=mweb"
-        }
-      ] : []),
-      {
-        label: "official-audio-search",
-        target: `ytsearch1:${trimmedQuery} official audio`,
-        sourceStrategy: "official-audio"
-      },
-      {
-        label: "topic-track-search",
-        target: `ytsearch1:${trimmedQuery} topic`,
-        sourceStrategy: "official-audio"
-      },
-      ...(!useCustomExtractorArgs ? [{
-        label: "official-audio-web-safari-no-cookies",
-        target: `ytsearch1:${trimmedQuery} official audio`,
-        sourceStrategy: "official-audio",
-        extractorArgs: "youtube:player_client=web_safari",
-        format: "ba[protocol*=m3u8]/bestaudio/best",
-        noCookies: true
-      }] : []),
-      {
-        label: "topic-track-search-no-cookies",
-        target: `ytsearch1:${trimmedQuery} topic`,
-        sourceStrategy: "official-audio",
-        noCookies: true
-      },
-      {
-        label: "album-track-search",
-        target: `ytsearch1:${trimmedQuery} album track`,
-        sourceStrategy: "album-track"
-      },
-      {
-        label: "audio-track-search",
-        target: `ytsearch1:${trimmedQuery} audio`,
-        sourceStrategy: "song-audio"
-      },
-      {
-        label: "plain-search-fallback",
-        target: `ytsearch1:${trimmedQuery}`,
-        sourceStrategy: "fallback-video"
-      },
-      ...(useSoundCloudFallback ? [{
-        label: "soundcloud-search",
-        target: `scsearch1:${trimmedQuery}`,
-        sourceStrategy: "soundcloud"
-      }] : [])
-    );
+  }
+
+  // SoundCloud fallback (opt-in, always last)
+  if (useSoundCloudFallback && trimmedQuery && !isUrl(trimmedQuery)) {
+    plans.push({
+      label: "soundcloud-search",
+      target: `scsearch1:${trimmedQuery}`,
+      sourceStrategy: "soundcloud"
+    });
   }
 
   return plans;
@@ -270,6 +245,7 @@ function spawnYtDlp(ytDlpBin, ytDlpBinArgs, args) {
 function runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options = {}) {
   return new Promise((resolve, reject) => {
     const args = buildYtDlpDownloadArgs(plan, musicDir, options);
+    console.log(`[yt-dlp] Trying plan "${plan.label}" → ${plan.target}`);
     const child = spawnYtDlp(ytDlpBin, ytDlpBinArgs, args);
     let stdout = "";
     let stderr = "";
@@ -301,135 +277,13 @@ function runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options = {}) 
           reject(new Error(`Downloaded file is empty: ${downloadedPath}`));
           return;
         }
+        console.log(`[yt-dlp] Success with plan "${plan.label}" → ${downloadedPath}`);
         resolve(downloadedPath);
       } catch {
         reject(new Error(`Downloaded file not found: ${downloadedPath}`));
       }
     });
   });
-}
-
-function saveCookiesToNetscapeFile(cookies, filePath) {
-  let content = "# Netscape HTTP Cookie File\n# This file was generated by Mobile Music Server.\n\n";
-  for (const cookie of cookies) {
-    const domain = cookie.domain;
-    const includeSubdomains = domain.startsWith(".") ? "TRUE" : "FALSE";
-    const path = cookie.path;
-    const secure = cookie.secure ? "TRUE" : "FALSE";
-    let expires = cookie.expires ? Math.round(cookie.expires) : 0;
-    if (expires < 0) {
-      expires = 0;
-    }
-    const name = cookie.name;
-    const value = cookie.value;
-    content += `${domain}\t${includeSubdomains}\t${path}\t${secure}\t${expires}\t${name}\t${value}\n`;
-  }
-  fs.writeFileSync(filePath, content, "utf8");
-}
-
-async function runChromiumDownload(plan, musicDir, query, options, ytDlpBin, ytDlpBinArgs) {
-  let targetUrl = plan.target;
-
-  if (!isUrl(targetUrl)) {
-    console.log(`[Chromium] Target is search query: "${targetUrl}". Resolving top search result first...`);
-    const cleanQuery = targetUrl.replace(/^(yt|ytm|sc)search\d+:/i, "");
-    try {
-      const searchResults = await searchRemoteWithYtDlp({
-        ytDlpBin,
-        ytDlpBinArgs,
-        query: cleanQuery,
-        jsRuntime: options.jsRuntime,
-        remoteComponents: options.remoteComponents,
-        extractorArgs: options.extractorArgs,
-        impersonate: options.impersonate,
-        cookies: options.cookies,
-        cookiesFromBrowser: options.cookiesFromBrowser,
-        useOauth2: options.useOauth2
-      });
-
-      if (searchResults && searchResults.length > 0) {
-        targetUrl = searchResults[0].url;
-        console.log(`[Chromium] Resolved top search result to: ${targetUrl}`);
-      } else {
-        throw new Error(`No search results found for query: ${cleanQuery}`);
-      }
-    } catch (searchError) {
-      throw new Error(`Failed to resolve search query via yt-dlp: ${searchError.message}`);
-    }
-  }
-
-  let tempCookiesPath = null;
-  try {
-    const { url, title, poToken, visitorData, cookies } = await extractAudioUrl(targetUrl);
-
-    // Save cookies to temporary file if they exist
-    if (cookies && cookies.length > 0) {
-      const { config } = require("./config");
-      fs.mkdirSync(config.cacheDir, { recursive: true });
-      tempCookiesPath = path.join(config.cacheDir, `temp_cookies_${Date.now()}.txt`);
-      saveCookiesToNetscapeFile(cookies, tempCookiesPath);
-    }
-
-    // Try running yt-dlp with the extracted PO Token first!
-    if (poToken) {
-      console.log("[Chromium] Trying download via yt-dlp using extracted PO Token...");
-      try {
-        let tokenArgs = `youtube:player_client=web;po_token=web+${poToken}`;
-        if (visitorData) {
-          let decodedVisitorData = visitorData;
-          try {
-            decodedVisitorData = decodeURIComponent(visitorData);
-          } catch (e) {
-            // ignore
-          }
-          tokenArgs += `;visitor_data=${decodedVisitorData}`;
-        }
-
-        const mergedExtractorArgs = options.extractorArgs
-          ? `${options.extractorArgs};${tokenArgs}`
-          : tokenArgs;
-
-        const ytDlpOptions = {
-          ...options,
-          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          cookies: tempCookiesPath || options.cookies,
-          extractorArgs: mergedExtractorArgs
-        };
-
-        const tempPlan = {
-          ...plan,
-          target: targetUrl,
-          label: `${plan.label}-with-potoken`
-        };
-
-        const downloadedPath = await runYtDlpDownload(ytDlpBin, ytDlpBinArgs, tempPlan, musicDir, ytDlpOptions);
-        console.log("[Chromium] Successful download via yt-dlp using PO Token!");
-        return { path: downloadedPath, resolvedUrl: targetUrl };
-      } catch (ytDlpError) {
-        console.warn("[Chromium] yt-dlp download with PO Token failed, falling back to direct stream download. Error:", ytDlpError.message);
-      }
-    }
-
-    // Fallback: download direct stream URL using https.get
-    if (url) {
-      console.log("[Chromium] Running direct stream URL download fallback...");
-      const name = title || query || "downloaded-audio";
-      const downloadedPath = await downloadAudioStream(url, name, musicDir);
-      return { path: downloadedPath, resolvedUrl: targetUrl };
-    }
-
-    throw new Error("Could not download stream: neither PO Token nor direct stream URL was captured.");
-  } catch (error) {
-    throw new Error(`Chromium download failed: ${error.message}`);
-  } finally {
-    if (tempCookiesPath && fs.existsSync(tempCookiesPath)) {
-      try {
-        fs.unlinkSync(tempCookiesPath);
-      } catch (unlinkError) {
-        console.warn("[Chromium] Failed to delete temporary cookies file:", unlinkError.message);
-      }
-    }
-  }
 }
 
 async function downloadWithYtDlp({
@@ -445,15 +299,10 @@ async function downloadWithYtDlp({
   cookies,
   cookiesFromBrowser,
   useOauth2,
-  chromiumFallback,
   soundCloudFallback,
   format
 }) {
-  const plans = buildDownloadPlans(query, url, {
-    chromiumFallback,
-    extractorArgs,
-    soundCloudFallback
-  });
+  const plans = buildDownloadPlans(query, url, { extractorArgs, soundCloudFallback });
   const errors = [];
   const options = {
     jsRuntime,
@@ -463,7 +312,6 @@ async function downloadWithYtDlp({
     cookies,
     cookiesFromBrowser,
     useOauth2,
-    chromiumFallback,
     soundCloudFallback,
     format
   };
@@ -474,19 +322,11 @@ async function downloadWithYtDlp({
 
   for (const plan of plans) {
     try {
-      let downloadedPath;
-      let resolvedUrl = plan.target;
-      if (plan.useChromium) {
-        const res = await runChromiumDownload(plan, musicDir, query, options, ytDlpBin, ytDlpBinArgs);
-        downloadedPath = res.path;
-        resolvedUrl = res.resolvedUrl;
-      } else {
-        downloadedPath = await runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options);
-      }
+      const downloadedPath = await runYtDlpDownload(ytDlpBin, ytDlpBinArgs, plan, musicDir, options);
       return {
         path: downloadedPath,
         candidate: {
-          url: resolvedUrl,
+          url: plan.target,
           title: query,
           sourceStrategy: plan.sourceStrategy,
           downloadStrategy: plan.label
@@ -584,7 +424,7 @@ async function findBestAudioCandidate({ query }) {
     url: plan.target,
     title: query,
     sourceStrategy: plan.sourceStrategy,
-    score: plan.sourceStrategy === "official-audio" ? 100 : 0
+    score: plan.sourceStrategy === "search" ? 100 : 0
   };
 }
 
